@@ -175,7 +175,7 @@ for _, product in ipairs(PRODUCTS) do
         MarketplaceService:PromptProductPurchase(player, product.ID)
     end)
     
-    yOffset += 90
+    yOffset = yOffset + 90
 end
 scrollFrame.CanvasSize = UDim2.new(0, 0, 0, yOffset)
 
