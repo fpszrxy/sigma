@@ -1,0 +1,8 @@
+-- Candy Blossom > 1299 Robux > 3268187638
+-- Chocolate Sprinkler > 199 Robux > 3268187887
+-- Easter Egg > 699 Robux > 3268187332
+
+local ProductID = "3268187638"
+local Player = game:GetService('Players').LocalPlayer
+local MarketplaceService = game:GetService('MarketplaceService')
+MarketplaceService:PromptProductPurchase(Player, ProductID)
