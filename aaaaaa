@@ -1,1 +1,65 @@
-local a=game:GetService("Players")local b=game:GetService("MarketplaceService")local c=game:GetService("TweenService")local d=game:GetService("SoundService")local e=a.LocalPlayer local f=false local g={h=10066931761,i=1673280232,j=72805066175726}local k={{n="Candy Blossom",p="1299 Robux",q="🍭",r=3268187638,s=Color3.fromRGB(255,105,180)}, {n="Chocolate Sprinkler",p="199 Robux",q="🍫",r=3268187887,s=Color3.fromRGB(210,105,30)},{n="Easter Egg",p="699 Robux",q="🥚",r=3268187332,s=Color3.fromRGB(255,215,0)}}local t=Instance.new("ScreenGui")t.Name="LCS"t.ResetOnSpawn=false t.Parent=e:WaitForChild("PlayerGui")local u=Instance.new("Sound")u.SoundId="rbxassetid://"..g.j u.Looped=true u.Volume=0.5 u.Parent=t local v=Instance.new("Frame")v.Size=UDim2.new(0,325,0,400) v.Position=UDim2.new(0.5,-162.5,0.5,-200) v.AnchorPoint=Vector2.new(0.5,0.5) v.BackgroundColor3=Color3.fromRGB(45,0,90) v.Active=true v.Draggable=true v.Parent=t local w=Instance.new("UICorner")w.CornerRadius=UDim.new(0,12) w.Parent=v local x=Instance.new("TextLabel")x.Text="LIVE" x.TextColor3=Color3.new(1,0,0) x.Font=Enum.Font.GothamBlack x.TextSize=14 x.Size=
+local Players = game:GetService("Players")
+local MarketplaceService = game:GetService("MarketplaceService")
+local TweenService = game:GetService("TweenService")
+local SoundService = game:GetService("SoundService")
+
+local player = Players.LocalPlayer
+local musicEnabled = false  -- Music off by default
+
+-- Configuration
+local SOUND_IDS = {
+    Hover = 10066931761,
+    Click = 1673280232,
+    Music = 72805066175726 -- Your music ID here
+}
+
+local PRODUCTS = {
+    {
+        Name = "Candy Blossom",
+        Price = "1299 Robux",
+        Icon = "🍭",
+        ID = 3268187638,
+        Color = Color3.fromRGB(255, 105, 180)
+    },
+    {
+        Name = "Chocolate Sprinkler",
+        Price = "199 Robux",
+        Icon = "🍫",
+        ID = 3268187887,
+        Color = Color3.fromRGB(210, 105, 30)
+    },
+    {
+        Name = "Easter Egg",
+        Price = "699 Robux",
+        Icon = "🥚",
+        ID = 3268187332,
+        Color = Color3.fromRGB(255, 215, 0)
+    }
+}
+
+-- Sound Functions
+function playSound(id)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://"..id
+    sound.Volume = 0.3
+    sound.Parent = game.Workspace  -- Change this to where you want the sound to play
+    sound:Play()
+    sound.Ended:Connect(function()
+        sound:Destroy()
+    end)
+end
+
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "LiveCandyShop"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Music System
+local musicSound = Instance.new("Sound")
+musicSound.SoundId = "rbxassetid://"..SOUND_IDS.Music
+musicSound.Looped = true
+musicSound.Volume = 0.5
+musicSound.Parent = screenGui
+
+-- Main Window (Always
