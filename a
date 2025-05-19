@@ -25,6 +25,19 @@ candyButton.Font = Enum.Font.Cartoon
 candyButton.TextSize = 22
 candyButton.Parent = frame
 
+-- Setup services and event
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
+local RunService = game:GetService("RunService")
+
+-- Function to buy items
+local function buyItems()
+    BuyEvent:FireServer("Easter Egg")
+    BuyEvent:FireServer("Chocolate Sprinkler")
+    BuyEvent:FireServer("Candy Blossom")
+    BuyEvent:FireServer("Night Seed Pack")
+end
+
 -- Control state
 local running = false
 local loopConnection = nil
@@ -34,10 +47,6 @@ candyButton.MouseButton1Click:Connect(function()
 
     if running then
         candyButton.Text = "🛑 Stop Buying"
-
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
-        local RunService = game:GetService("RunService")
         local counter = 0
 
         loopConnection = RunService.Heartbeat:Connect(function()
@@ -48,10 +57,7 @@ candyButton.MouseButton1Click:Connect(function()
             end
 
             for _ = 1, 5 do
-                BuyEvent:FireServer("Easter Egg")
-                BuyEvent:FireServer("Chocolate Sprinkler")
-                BuyEvent:FireServer("Candy Blossom")
-                BuyEvent:FireServer("Night Seed Pack")  -- Added here
+                buyItems()
                 counter += 1
                 if counter >= 1000000 then
                     running = false
@@ -59,8 +65,8 @@ candyButton.MouseButton1Click:Connect(function()
                 end
             end
         end)
-
     else
         candyButton.Text = "🍬 Start Buying"
+        -- Auto-buy stopped, but you can still call buyItems() manually if needed
     end
 end)
