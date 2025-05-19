@@ -1,0 +1,139 @@
+if not getgenv()._GROWAGARDEN_BLOODMOON_HOP then
+    getgenv()._GROWAGARDEN_BLOODMOON_HOP = true
+
+    local PlaceId = 126884695634066
+    local HttpService = game:GetService("HttpService")
+    local TeleportService = game:GetService("TeleportService")
+    local Players = game:GetService("Players")
+
+    -- GUI Setup
+    local gui = game.CoreGui:FindFirstChild("BloodmoonHopGUI")
+    if gui then gui:Destroy() end
+    gui = Instance.new("ScreenGui")
+    gui.Name = "BloodmoonHopGUI"
+    gui.ResetOnSpawn = false
+    gui.Parent = game.CoreGui
+
+    local frame = Instance.new("Frame", gui)
+    frame.Size = UDim2.new(0, 260, 0, 110)
+    frame.Position = UDim2.new(0.5, -130, 0.7, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    frame.Active = true
+
+    local UICorner = Instance.new("UICorner", frame)
+    UICorner.CornerRadius = UDim.new(0, 10)
+
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1,0,0.26,0)
+    title.Position = UDim2.new(0,0,0,0)
+    title.Text = "Bloodmoon Serverhop"
+    title.TextColor3 = Color3.new(1,1,1)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 20
+
+    local statusLabel = Instance.new("TextLabel", frame)
+    statusLabel.Size = UDim2.new(1,0,0.28,0)
+    statusLabel.Position = UDim2.new(0,0,0.28,0)
+    statusLabel.Text = "Status: Initializing..."
+    statusLabel.TextColor3 = Color3.new(1,1,1)
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextSize = 16
+
+    local hopLabel = Instance.new("TextLabel", frame)
+    hopLabel.Size = UDim2.new(1,0,0.22,0)
+    hopLabel.Position = UDim2.new(0,0,0.62,0)
+    hopLabel.Text = "Hops: 0"
+    hopLabel.TextColor3 = Color3.new(1,1,1)
+    hopLabel.BackgroundTransparency = 1
+    hopLabel.Font = Enum.Font.Gotham
+    hopLabel.TextSize = 15
+
+    -- Draggable
+    local UIS = game:GetService("UserInputService")
+    local dragging, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+    UIS.InputChanged:Connect(function(input)
+        if dragging and input == dragInput then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    -- Bloodmoon detection
+    local function isBloodmoon()
+        return workspace:GetAttribute("BloodMoonEvent") == true
+    end
+
+    local function getServerList()
+        local servers = {}
+        local cursor = ""
+        while true do
+            local url = "https://games.roblox.com/v1/games/"..PlaceId.."/servers/Public?sortOrder=Asc&limit=100"..(cursor ~= "" and "&cursor="..cursor or "")
+            local success, response = pcall(function() return game:HttpGet(url) end)
+            if not success then break end
+            local data = HttpService:JSONDecode(response)
+            for _, server in ipairs(data.data) do
+                if server.playing < server.maxPlayers and server.id ~= game.JobId then
+                    table.insert(servers, server.id)
+                end
+            end
+            cursor = data.nextPageCursor or ""
+            if cursor == "" then break end
+        end
+        return servers
+    end
+
+    -- Main loop
+    local hops = 0
+    local function mainLoop()
+        while true do
+            if isBloodmoon() then
+                statusLabel.Text = "Status: BLOODMOON FOUND!"
+                hopLabel.Text = "Hops: "..hops
+                game.StarterGui:SetCore("SendNotification", {Title="Bloodmoon Found!", Text="Stopped serverhopping.", Duration=5})
+                print("Bloodmoon found! Stopping serverhop.")
+                break
+            else
+                hops = hops + 1
+                statusLabel.Text = "Status: Not Bloodmoon, hopping..."
+                hopLabel.Text = "Hops: "..hops
+                print("Not a Bloodmoon server. Hopping... (Hop #" .. hops .. ")")
+                game.StarterGui:SetCore("SendNotification", {Title="Serverhop", Text="Searching for Bloodmoon... (Hop "..hops..")", Duration=3})
+                wait(2)
+                local servers = getServerList()
+                if #servers > 0 then
+                    statusLabel.Text = "Status: Teleporting..."
+                    TeleportService:TeleportToPlaceInstance(PlaceId, servers[math.random(1, #servers)], Players.LocalPlayer)
+                    wait(10) -- Give time for teleport
+                else
+                    statusLabel.Text = "Status: No servers found!"
+                    print("No servers found to hop to!")
+                    wait(5)
+                end
+            end
+        end
+    end
+
+    -- Start!
+    statusLabel.Text = "Status: Checking for Bloodmoon..."
+    hopLabel.Text = "Hops: 0"
+    spawn(mainLoop)
+end
