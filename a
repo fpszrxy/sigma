@@ -1,0 +1,53 @@
+local player = game.Players.LocalPlayer
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "CandyClickGui"
+gui.ResetOnSpawn = false
+
+-- Create a movable frame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 200, 0, 100)
+frame.Position = UDim2.new(0.4, 0, 0.4, 0)
+frame.BackgroundColor3 = Color3.fromRGB(255, 182, 193) -- light pink
+frame.BorderSizePixel = 0
+frame.Draggable = true
+frame.Active = true
+frame.Selectable = true
+frame.Parent = gui
+
+-- Candy-styled button
+local candyButton = Instance.new("TextButton")
+candyButton.Size = UDim2.new(1, -20, 0, 60)
+candyButton.Position = UDim2.new(0, 10, 0, 20)
+candyButton.BackgroundColor3 = Color3.fromRGB(255, 105, 180) -- hot pink
+candyButton.Text = "🍬 Buy Candy Items"
+candyButton.TextColor3 = Color3.new(1, 1, 1)
+candyButton.Font = Enum.Font.Cartoon
+candyButton.TextSize = 22
+candyButton.Parent = frame
+
+-- Control loop status
+local running = false
+
+candyButton.MouseButton1Click:Connect(function()
+    if running then return end
+    running = true
+
+    -- Run the loop in a new thread
+    task.spawn(function()
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
+
+        while running do
+            BuyEvent:FireServer("Easter Egg")
+            BuyEvent:FireServer("Chocolate Sprinkler")
+            BuyEvent:FireServer("Candy Blossom")
+            wait(0.01)
+        end
+    end)
+
+    -- Change text to show it's running
+    candyButton.Text = "🍭 Running..."
+    wait(3) -- Auto-stop after 3 seconds
+    running = false
+    candyButton.Text = "🍬 Buy Candy Items"
+end)
