@@ -32,22 +32,21 @@ candyButton.MouseButton1Click:Connect(function()
     if running then return end
     running = true
 
-    -- Run the loop in a new thread
+    candyButton.Text = "🍭 Running..."
+
     task.spawn(function()
         local ReplicatedStorage = game:GetService("ReplicatedStorage")
         local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
 
-        while running do
+        for i = 1, 1000000 do
+            if not running then break end
             BuyEvent:FireServer("Easter Egg")
             BuyEvent:FireServer("Chocolate Sprinkler")
             BuyEvent:FireServer("Candy Blossom")
-            wait(0.01)
+            task.wait() -- yield a bit to avoid freezing
         end
-    end)
 
-    -- Change text to show it's running
-    candyButton.Text = "🍭 Running..."
-    wait(3) -- Auto-stop after 3 seconds
-    running = false
-    candyButton.Text = "🍬 Buy Candy Items"
+        running = false
+        candyButton.Text = "🍬 Buy Candy Items"
+    end)
 end)
