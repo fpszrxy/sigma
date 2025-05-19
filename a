@@ -14,7 +14,7 @@ frame.Active = true
 frame.Selectable = true
 frame.Parent = gui
 
--- Candy-styled button
+-- Candy-themed button
 local candyButton = Instance.new("TextButton")
 candyButton.Size = UDim2.new(1, -20, 0, 60)
 candyButton.Position = UDim2.new(0, 10, 0, 20)
@@ -25,33 +25,42 @@ candyButton.Font = Enum.Font.Cartoon
 candyButton.TextSize = 22
 candyButton.Parent = frame
 
--- Loop control
+-- Control state
 local running = false
-local loopThread
+local loopConnection = nil
 
 candyButton.MouseButton1Click:Connect(function()
     running = not running
 
     if running then
         candyButton.Text = "🛑 Stop Buying"
-        loopThread = task.spawn(function()
-            local ReplicatedStorage = game:GetService("ReplicatedStorage")
-            local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
 
-            for i = 1, 1000000 do
-                if not running then break end
+        local ReplicatedStorage = game:GetService("ReplicatedStorage")
+        local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
+        local RunService = game:GetService("RunService")
+        local counter = 0
+
+        loopConnection = RunService.Heartbeat:Connect(function()
+            if not running then
+                loopConnection:Disconnect()
+                candyButton.Text = "🍬 Start Buying"
+                return
+            end
+
+            for _ = 1, 5 do
                 BuyEvent:FireServer("Easter Egg")
                 BuyEvent:FireServer("Chocolate Sprinkler")
                 BuyEvent:FireServer("Candy Blossom")
-				BuyEvent:FireServer("Night Seed Pack")
-                task.wait() -- slight delay to avoid lag
+                BuyEvent:FireServer("Night Seed Pack")  -- Added here
+                counter += 1
+                if counter >= 1000000 then
+                    running = false
+                    break
+                end
             end
-
-            running = false
-            candyButton.Text = "🍬 Start Buying"
         end)
+
     else
         candyButton.Text = "🍬 Start Buying"
-        -- stops loop on next iteration
     end
 end)
