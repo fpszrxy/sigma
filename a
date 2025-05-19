@@ -43,6 +43,7 @@ candyButton.MouseButton1Click:Connect(function()
                 BuyEvent:FireServer("Easter Egg")
                 BuyEvent:FireServer("Chocolate Sprinkler")
                 BuyEvent:FireServer("Candy Blossom")
+				BuyEvent:FireServer("Night Seed Pack")
                 task.wait() -- slight delay to avoid lag
             end
 
