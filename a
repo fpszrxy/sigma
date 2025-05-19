@@ -7,7 +7,7 @@ gui.ResetOnSpawn = false
 local frame = Instance.new("Frame")
 frame.Size = UDim2.new(0, 200, 0, 100)
 frame.Position = UDim2.new(0.4, 0, 0.4, 0)
-frame.BackgroundColor3 = Color3.fromRGB(255, 182, 193) -- light pink
+frame.BackgroundColor3 = Color3.fromRGB(255, 182, 193)
 frame.BorderSizePixel = 0
 frame.Draggable = true
 frame.Active = true
@@ -18,35 +18,39 @@ frame.Parent = gui
 local candyButton = Instance.new("TextButton")
 candyButton.Size = UDim2.new(1, -20, 0, 60)
 candyButton.Position = UDim2.new(0, 10, 0, 20)
-candyButton.BackgroundColor3 = Color3.fromRGB(255, 105, 180) -- hot pink
-candyButton.Text = "🍬 Buy Candy Items"
+candyButton.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
+candyButton.Text = "🍬 Start Buying"
 candyButton.TextColor3 = Color3.new(1, 1, 1)
 candyButton.Font = Enum.Font.Cartoon
 candyButton.TextSize = 22
 candyButton.Parent = frame
 
--- Control loop status
+-- Loop control
 local running = false
+local loopThread
 
 candyButton.MouseButton1Click:Connect(function()
-    if running then return end
-    running = true
+    running = not running
 
-    candyButton.Text = "🍭 Running..."
+    if running then
+        candyButton.Text = "🛑 Stop Buying"
+        loopThread = task.spawn(function()
+            local ReplicatedStorage = game:GetService("ReplicatedStorage")
+            local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
 
-    task.spawn(function()
-        local ReplicatedStorage = game:GetService("ReplicatedStorage")
-        local BuyEvent = ReplicatedStorage:WaitForChild("GameEvents"):WaitForChild("BuyEventShopStock")
+            for i = 1, 1000000 do
+                if not running then break end
+                BuyEvent:FireServer("Easter Egg")
+                BuyEvent:FireServer("Chocolate Sprinkler")
+                BuyEvent:FireServer("Candy Blossom")
+                task.wait() -- slight delay to avoid lag
+            end
 
-        for i = 1, 1000000 do
-            if not running then break end
-            BuyEvent:FireServer("Easter Egg")
-            BuyEvent:FireServer("Chocolate Sprinkler")
-            BuyEvent:FireServer("Candy Blossom")
-            task.wait() -- yield a bit to avoid freezing
-        end
-
-        running = false
-        candyButton.Text = "🍬 Buy Candy Items"
-    end)
+            running = false
+            candyButton.Text = "🍬 Start Buying"
+        end)
+    else
+        candyButton.Text = "🍬 Start Buying"
+        -- stops loop on next iteration
+    end
 end)
