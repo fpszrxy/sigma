@@ -4,7 +4,7 @@ gui.Name = "CandyClickGui"
 gui.ResetOnSpawn = false
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 200, 0, 100)
+frame.Size = UDim2.new(0, 220, 0, 180)
 frame.Position = UDim2.new(0.4, 0, 0.4, 0)
 frame.BackgroundColor3 = Color3.fromRGB(255, 182, 193)
 frame.BorderSizePixel = 0
@@ -13,6 +13,7 @@ frame.Active = true
 frame.Selectable = true
 frame.Parent = gui
 
+-- Candy Buy Button
 local candyButton = Instance.new("TextButton")
 candyButton.Size = UDim2.new(1, -20, 0, 60)
 candyButton.Position = UDim2.new(0, 10, 0, 20)
@@ -23,6 +24,18 @@ candyButton.Font = Enum.Font.Cartoon
 candyButton.TextSize = 22
 candyButton.Parent = frame
 
+-- Discord Copy Button
+local discordButton = Instance.new("TextButton")
+discordButton.Size = UDim2.new(1, -20, 0, 50)
+discordButton.Position = UDim2.new(0, 10, 0, 90)
+discordButton.BackgroundColor3 = Color3.fromRGB(114, 137, 218)
+discordButton.Text = "📋 Copy Discord Invite"
+discordButton.TextColor3 = Color3.new(1, 1, 1)
+discordButton.Font = Enum.Font.Cartoon
+discordButton.TextSize = 20
+discordButton.Parent = frame
+
+-- Auto-buy logic
 local running = false
 local loopConnection = nil
 
@@ -52,12 +65,27 @@ candyButton.MouseButton1Click:Connect(function()
                 counter += 1
                 if counter >= 1000000 then
                     running = false
+                    candyButton.Text = "🍬 Start Buying"
+                    loopConnection:Disconnect()
                     break
                 end
             end
         end)
-
     else
         candyButton.Text = "🍬 Start Buying"
+    end
+end)
+
+-- Discord button logic (requires exploit to copy)
+discordButton.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard("https://discord.gg/PAy8Ht3SDC")
+        discordButton.Text = "✅ Copied!"
+        wait(2)
+        discordButton.Text = "📋 Copy Discord Invite"
+    else
+        discordButton.Text = "❌ Not Supported"
+        wait(2)
+        discordButton.Text = "📋 Copy Discord Invite"
     end
 end)
