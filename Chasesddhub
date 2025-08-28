@@ -1,4 +1,10 @@
+-- File: Sigma Loader (No Rayfield).lua
+-- Purpose: Always run sigmaster, then detect current game title and load the matching script.
+-- Safety: No UI libs, no webhooks, no data exfiltration. Minimal console feedback via 'print/warn'.
 
+-- =========================
+-- Helpers
+-- =========================
 local function httpget(url)
     return game:HttpGet(url)
 end
@@ -14,10 +20,14 @@ local function run_remote(url, label)
     end
 end
 
-
+-- =========================
+-- Always run base script (sigmaster)
+-- =========================
 run_remote("https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/sigmaster", "sigmaster")
 
-
+-- =========================
+-- Game detection by title (MarketplaceService)
+-- =========================
 local MarketplaceService = game:GetService("MarketplaceService")
 local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId)
 local title = ""
@@ -28,25 +38,34 @@ else
 end
 
 -- Map of friendly names -> URLs
-local PLACEID_URLS = {
-    -- Blade Ball (main + alternate places)
-    [13772394625] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Bladeball",
-    [14525514348] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Bladeball",
-    [14732610803] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Bladeball",
-
-    -- 99 Nights
-    [15532962292] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsforest",
-
-    -- Basketball Legends
-    [12355337193] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
-	[14386691987] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
+local URLS = {
+    ["bladeball"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Bladeball",
+    ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsforest",
+    ["basketball legends"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua"
 }
 
+-- Map of PlaceIds -> URLs
+local PLACEID_URLS = {
+    -- Blade Ball (main + alternate places)
+    [13772394625] = URLS["bladeball"],
+    [14525514348] = URLS["bladeball"],
+    [14732610803] = URLS["bladeball"],
 
+    -- 99 Nights
+    [126509999114328] = URLS["99 nights"],
+
+    -- Basketball Legends
+    [12355337193] = URLS["basketball legends"],
+    [14386691987] = URLS["basketball legends"],
+}
+
+-- =========================
+-- Title-based routing
+-- =========================
 local matched = false
 if title ~= "" then
     if title:find("blade%p*%s*ball") or title:find("bladeball") then
-        run_remote(URLS.bladeball, "Blade Ball")
+        run_remote(URLS["bladeball"], "Blade Ball")
         matched = true
     elseif title:find("%f[%w]99%f[%W]%s*nights") or title:find("99%s*nights") or title:find("99nights") then
         run_remote(URLS["99 nights"], "99 Nights")
