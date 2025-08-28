@@ -21,6 +21,30 @@ local function run_remote(url, label)
 end
 
 -- =========================
+-- Discord Notification
+-- =========================
+local function show_discord_notification()
+    local discord_url = "https://discord.gg/PAy8Ht3SDC"
+    
+    -- Try to copy to clipboard
+    pcall(function()
+        setclipboard(discord_url)
+    end)
+    
+    -- Show notification
+    warn("[Sigma] Discord link copied to clipboard! Join our community: " .. discord_url)
+    print("==============================================")
+    print("Sigma Discord: " .. discord_url)
+    print("==============================================")
+    print("Link has been copied to your clipboard!")
+    print("Join for updates, support, and more scripts!")
+    print("==============================================")
+end
+
+-- Show Discord notification first
+show_discord_notification()
+
+-- =========================
 -- Always run base script (sigmaster)
 -- =========================
 run_remote("https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/sigmaster", "sigmaster")
