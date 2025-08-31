@@ -1,4 +1,8 @@
+-- File: Sigma Loader (No Rayfield).lua
+-- Purpose: Always run sigmaster, then detect current game title and load the matching script.
+-- Safety: No UI libs, no webhooks, no data exfiltration. Minimal console feedback via 'print/warn'.
 
+-- =========================
 -- Helpers
 -- =========================
 local function httpget(url)
@@ -63,6 +67,7 @@ local URLS = {
     ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsforest",
     ["basketball legends"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
     ["build a boat"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/babft",
+    ["steal a brainrot"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/steal%20a%20brainrot",
     ["fish it"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/fish%20it"
 }
 
@@ -82,6 +87,10 @@ local PLACEID_URLS = {
     
     -- Build A Boat
     [537413528] = URLS["build a boat"],
+    
+    -- Steal A Brainrot (multiple versions)
+    [96342491571673] = URLS["steal a brainrot"],
+    [7709344486] = URLS["steal a brainrot"],
     
     -- Fish It!
     [121864768012064] = URLS["fish it"]
@@ -103,6 +112,9 @@ if title ~= "" then
         matched = true
     elseif title:find("build%s*a%s*boat") or title:find("buildaboat") or title:find("babft") or title:find("for treasure") then
         run_remote(URLS["build a boat"], "Build A Boat")
+        matched = true
+    elseif title:find("steal%s*a%s*brainrot") or title:find("stealabrainrot") then
+        run_remote(URLS["steal a brainrot"], "Steal A Brainrot")
         matched = true
     elseif title:find("fish%p*%s*it") or title:find("fishit") then
         run_remote(URLS["fish it"], "Fish It!")
