@@ -1,4 +1,4 @@
---// library script private
+-- Chasesdd Library for Client-Sided Roblox Executors
 getgenv().namehub = "Chasesdd"
 local UserInputService = game:GetService('UserInputService')
 local LocalPlayer = game:GetService('Players').LocalPlayer
@@ -19,52 +19,57 @@ local Library = {
     start_position = nil;
 }
 
+-- File I/O for flag persistence (executor-compatible)
 if not isfolder("chasesdd hub") then
     makefolder("chasesdd hub")
 end
 
 function Library:disconnect()
-    for _, value in Library.connections do
-        if not Library.connections[value] then
-            continue
+    for _, value in pairs(Library.connections) do
+        if value and typeof(value) == "RBXScriptConnection" then
+            value:Disconnect()
+            Library.connections[_] = nil
         end
-        Library.connections[value]:Disconnect()
-        Library.connections[value] = nil
     end
 end
 
 function Library:clear()
-    for _, object in CoreGui:GetChildren() do
-        if object.Name ~= "chasesdd" then
-            continue
+    for _, object in pairs(CoreGui:GetChildren()) do
+        if object.Name == "chasesdd" then
+            object:Destroy()
         end
-        object:Destroy()
     end
 end
 
 function Library:exist()
-    if not Library.core then return end
-    if not Library.core.Parent then return end
-    return true
+    return Library.core and Library.core.Parent
 end
 
 function Library:save_flags()
-    if not Library.exist() then return end
+    if not Library:exist() then return end
     local flags = HttpService:JSONEncode(Library.Flags)
-    writefile(`chasesdd hub/{game.GameId}.lua`, flags)
+    writefile("chasesdd hub/" .. game.GameId .. ".lua", flags)
 end
 
 function Library:load_flags()
-    if not isfile(`chasesdd hub/{game.GameId}.lua`) then Library.save_flags() return end
-    local flags = readfile(`chasesdd hub/{game.GameId}.lua`)
-    if not flags then Library.save_flags() return end
-    Library.Flags = HttpService:JSONDecode(flags)
+    local flagFile = "chasesdd hub/" .. game.GameId .. ".lua"
+    if not isfile(flagFile) then
+        Library:save_flags()
+        return
+    end
+    local flags = readfile(flagFile)
+    if flags then
+        Library.Flags = HttpService:JSONDecode(flags) or {}
+    else
+        Library:save_flags()
+    end
 end
 
-Library.load_flags()
-Library.clear()
+Library:load_flags()
+Library:clear()
 
 function Library:open()
+    if not self.Container or not self.Shadow then return end
     self.Container.Visible = true
     self.Shadow.Visible = true
     self.Mobile.Modal = true
@@ -77,6 +82,7 @@ function Library:open()
 end
 
 function Library:close()
+    if not self.Container or not self.Shadow then return end
     TweenService:Create(self.Shadow, TweenInfo.new(0.6, Enum.EasingStyle.Circular, Enum.EasingDirection.InOut), {
         Size = UDim2.new(0, 0, 0, 0)
     }):Play()
@@ -84,39 +90,28 @@ function Library:close()
         Size = UDim2.new(0, 0, 0, 0)
     })
     main_tween:Play()
-    main_tween.Completed:Once(function()
-        if Library.enabled then
-            return
-        end
+    main_tween.Completed:Wait()
+    if not Library.Enabled then
         self.Container.Visible = false
         self.Shadow.Visible = false
         self.Mobile.Modal = false
-    end)
+    end
 end
 
 function Library:drag()
-    if not Library.drag_position then
-        return
-    end
-    if not Library.start_position then
-        return
-    end
+    if not Library.drag_position or not Library.start_position then return end
     local delta = self.input.Position - Library.drag_position
     local position = UDim2.new(Library.start_position.X.Scale, Library.start_position.X.Offset + delta.X, Library.start_position.Y.Scale, Library.start_position.Y.Offset + delta.Y)
-    TweenService:Create(self.container.Container, TweenInfo.new(0.2), {
-        Position = position
-    }):Play()
-    TweenService:Create(self.container.Shadow, TweenInfo.new(0.2), {
-        Position = position
-    }):Play()
+    TweenService:Create(self.Container, TweenInfo.new(0.2), {Position = position}):Play()
+    TweenService:Create(self.Shadow, TweenInfo.new(0.2), {Position = position}):Play()
 end
 
 function Library:visible()
-    Library.enabled = not Library.enabled
-    if Library.enabled then
-        Library:open(self)
+    Library.Enabled = not Library.Enabled
+    if Library.Enabled then
+        Library:open()
     else
-        Library:close(self)
+        Library:close()
     end
 end
 
@@ -124,6 +119,7 @@ function Library:new()
     local container = Instance.new("ScreenGui")
     container.Name = "chasesdd"
     container.Parent = CoreGui
+    container.ResetOnSpawn = false -- Prevent reset on death in executors
     Library.core = container
 
     local Shadow = Instance.new("ImageLabel")
@@ -132,9 +128,8 @@ function Library:new()
     Shadow.AnchorPoint = Vector2.new(0.5, 0.5)
     Shadow.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Shadow.BackgroundTransparency = 1.000
-    Shadow.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Shadow.BorderSizePixel = 0
-    Shadow.Position = UDim2.new(0.508668244, 0, 0.5, 0)
+    Shadow.Position = UDim2.new(0.5, 0, 0.5, 0)
     Shadow.Size = UDim2.new(0, 776, 0, 509)
     Shadow.ZIndex = 0
     Shadow.Image = "rbxassetid://17290899982"
@@ -144,7 +139,6 @@ function Library:new()
     Container.Parent = container
     Container.AnchorPoint = Vector2.new(0.5, 0.5)
     Container.BackgroundColor3 = Color3.fromRGB(19, 20, 24)
-    Container.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Container.BorderSizePixel = 0
     Container.ClipsDescendants = true
     Container.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -157,9 +151,7 @@ function Library:new()
     local Top = Instance.new("ImageLabel")
     Top.Name = "Top"
     Top.Parent = Container
-    Top.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Top.BackgroundTransparency = 1.000
-    Top.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Top.BorderSizePixel = 0
     Top.Size = UDim2.new(0, 699, 0, 39)
     Top.Image = ""
@@ -168,20 +160,16 @@ function Library:new()
     Logo.Name = "Logo"
     Logo.Parent = Top
     Logo.AnchorPoint = Vector2.new(0.5, 0.5)
-    Logo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Logo.BackgroundTransparency = 1.000
-    Logo.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Logo.BorderSizePixel = 0
     Logo.Position = UDim2.new(0.0387367606, 0, 0.5, 0)
     Logo.Size = UDim2.new(0, 30, 0, 25)
     Logo.Image = ""
-    
+
     local TextLabel = Instance.new("TextLabel")
     TextLabel.Parent = Top
     TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-    TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     TextLabel.BackgroundTransparency = 1.000
-    TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
     TextLabel.BorderSizePixel = 0
     TextLabel.Position = UDim2.new(0.0938254446, 0, 0.496794879, 0)
     TextLabel.Size = UDim2.new(0, 75, 0, 16)
@@ -197,7 +185,6 @@ function Library:new()
     Line.Name = "Line"
     Line.Parent = Container
     Line.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
-    Line.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Line.BorderSizePixel = 0
     Line.Position = UDim2.new(0.296137333, 0, 0.0915492922, 0)
     Line.Size = UDim2.new(0, 2, 0, 387)
@@ -205,13 +192,10 @@ function Library:new()
     local tabs = Instance.new("ScrollingFrame")
     tabs.Name = "Tabs"
     tabs.Active = true
-    tabs.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     tabs.BackgroundTransparency = 1.000
-    tabs.BorderColor3 = Color3.fromRGB(0, 0, 0)
     tabs.BorderSizePixel = 0
     tabs.Position = UDim2.new(0, 0, 0.0915492922, 0)
     tabs.Size = UDim2.new(0, 209, 0, 386)
-    tabs.ScrollBarImageColor3 = Color3.fromRGB(0, 0, 0)
     tabs.ScrollBarThickness = 0
     tabs.Parent = Container
 
@@ -225,13 +209,9 @@ function Library:new()
     UIPadding.Parent = tabs
     UIPadding.PaddingTop = UDim.new(0, 15)
 
-    local tabsCorner = Instance.new("UICorner")
-    tabsCorner.Parent = tabs
-
     local mobile_button = Instance.new("TextButton")
     mobile_button.Name = "Mobile"
     mobile_button.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
-    mobile_button.BorderColor3 = Color3.fromRGB(0, 0, 0)
     mobile_button.BorderSizePixel = 0
     mobile_button.Position = UDim2.new(0.0210955422, 0, 0.91790241, 0)
     mobile_button.Size = UDim2.new(0, 122, 0, 38)
@@ -239,7 +219,6 @@ function Library:new()
     mobile_button.Modal = true
     mobile_button.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.SemiBold)
     mobile_button.Text = ""
-    mobile_button.TextColor3 = Color3.fromRGB(0, 0, 0)
     mobile_button.TextSize = 14.000
     mobile_button.Parent = container
 
@@ -251,9 +230,7 @@ function Library:new()
     shadowMobile.Name = "Shadow"
     shadowMobile.Parent = mobile_button
     shadowMobile.AnchorPoint = Vector2.new(0.5, 0.5)
-    shadowMobile.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     shadowMobile.BackgroundTransparency = 1.000
-    shadowMobile.BorderColor3 = Color3.fromRGB(0, 0, 0)
     shadowMobile.BorderSizePixel = 0
     shadowMobile.Position = UDim2.new(0.5, 0, 0.5, 0)
     shadowMobile.Size = UDim2.new(0, 144, 0, 58)
@@ -265,9 +242,7 @@ function Library:new()
     State.Name = "State"
     State.Parent = mobile_button
     State.AnchorPoint = Vector2.new(0.5, 0.5)
-    State.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     State.BackgroundTransparency = 1.000
-    State.BorderColor3 = Color3.fromRGB(0, 0, 0)
     State.BorderSizePixel = 0
     State.Position = UDim2.new(0.646000028, 0, 0.5, 0)
     State.Size = UDim2.new(0, 64, 0, 15)
@@ -283,28 +258,28 @@ function Library:new()
     Icon.Name = "Icon"
     Icon.Parent = mobile_button
     Icon.AnchorPoint = Vector2.new(0.5, 0.5)
-    Icon.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Icon.BackgroundTransparency = 1.000
-    Icon.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Icon.BorderSizePixel = 0
     Icon.Position = UDim2.new(0.268000007, 0, 0.5, 0)
     Icon.Size = UDim2.new(0, 15, 0, 15)
     Icon.Image = "rbxassetid://17183279677"
-    Container.InputBegan:Connect(function(input: InputObject)
+
+    Container.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 then
             Library.dragging = true
             Library.drag_position = input.Position
             Library.start_position = Container.Position
+            self.input = input
         end
     end)
 
-    Container.InputChanged:Connect(function(input: InputObject)
+    Container.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement and Library.dragging then
             Library:drag()
         end
     end)
 
-    Container.InputEnded:Connect(function(input: InputObject)
+    Container.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.MouseButton2 then
             Library.dragging = false
         end
@@ -326,13 +301,11 @@ function Library:create_tab(name)
     local tab_button = Instance.new("TextButton")
     tab_button.Name = "Tab"
     tab_button.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
-    tab_button.BorderColor3 = Color3.fromRGB(0, 0, 0)
     tab_button.BorderSizePixel = 0
     tab_button.Size = UDim2.new(0, 190, 0, 38)
     tab_button.AutoButtonColor = false
     tab_button.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.SemiBold)
     tab_button.Text = ""
-    tab_button.TextColor3 = Color3.fromRGB(0, 0, 0)
     tab_button.TextSize = 14.000
     tab_button.Parent = self.core.Container.Tabs
 
@@ -344,9 +317,7 @@ function Library:create_tab(name)
     shadowTab.Name = "Shadow"
     shadowTab.Parent = tab_button
     shadowTab.AnchorPoint = Vector2.new(0.5, 0.5)
-    shadowTab.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     shadowTab.BackgroundTransparency = 1.000
-    shadowTab.BorderColor3 = Color3.fromRGB(0, 0, 0)
     shadowTab.BorderSizePixel = 0
     shadowTab.Position = UDim2.new(0.5, 0, 0.5, 0)
     shadowTab.Size = UDim2.new(0, 210, 0, 58)
@@ -357,9 +328,7 @@ function Library:create_tab(name)
     local TextLabel = Instance.new("TextLabel")
     TextLabel.Parent = tab_button
     TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-    TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     TextLabel.BackgroundTransparency = 1.000
-    TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
     TextLabel.BorderSizePixel = 0
     TextLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
     TextLabel.Size = UDim2.new(0, 170, 0, 15)
@@ -374,14 +343,11 @@ function Library:create_tab(name)
     left_section.Name = "Left"
     left_section.Active = true
     left_section.AnchorPoint = Vector2.new(0.5, 0.5)
-    left_section.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     left_section.BackgroundTransparency = 1.000
-    left_section.BorderColor3 = Color3.fromRGB(0, 0, 0)
     left_section.BorderSizePixel = 0
     left_section.Position = UDim2.new(0.384165913, 0, 0.590140879, 0)
     left_section.Size = UDim2.new(0, 206, 0, 332)
     left_section.Visible = false
-    left_section.ScrollBarImageColor3 = Color3.fromRGB(0, 0, 0)
     left_section.ScrollBarThickness = 0
     left_section.Parent = self.core.Container
 
@@ -399,14 +365,11 @@ function Library:create_tab(name)
     right_section.Name = "Right"
     right_section.Active = true
     right_section.AnchorPoint = Vector2.new(0.5, 0.5)
-    right_section.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     right_section.BackgroundTransparency = 1.000
-    right_section.BorderColor3 = Color3.fromRGB(0, 0, 0)
     right_section.BorderSizePixel = 0
     right_section.Position = UDim2.new(0.698340297, 0, 0.590140879, 0)
     right_section.Size = UDim2.new(0, 206, 0, 332)
     right_section.Visible = false
-    right_section.ScrollBarImageColor3 = Color3.fromRGB(0, 0, 0)
     right_section.ScrollBarThickness = 0
     right_section.Parent = self.core.Container
 
@@ -421,19 +384,17 @@ function Library:create_tab(name)
     right_padding.PaddingTop = UDim.new(0, 10)
 
     tab_button.MouseButton1Click:Connect(function()
-        for _, value in self.core.Container.Tabs:GetChildren() do
-            if not value:IsA("TextButton") then
-                continue
+        for _, value in pairs(self.core.Container.Tabs:GetChildren()) do
+            if value:IsA("TextButton") then
+                value.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
+                value.Shadow.ImageTransparency = 0.200
             end
-            value.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
-            value.Shadow.ImageTransparency = 0.200
         end
 
-        for _, value in self.core.Container:GetChildren() do
-            if not value:IsA("ScrollingFrame") then
-                continue
+        for _, value in pairs(self.core.Container:GetChildren()) do
+            if value:IsA("ScrollingFrame") then
+                value.Visible = false
             end
-            value.Visible = false
         end
 
         tab_button.BackgroundColor3 = Color3.fromRGB(22, 23, 27)
@@ -442,21 +403,18 @@ function Library:create_tab(name)
         right_section.Visible = true
     end)
 
-    -- New: Add create_tab method to Tab
     function Tab:create_tab(subTabName)
         local SubTab = {}
         local subTabButton = Instance.new("TextButton")
         subTabButton.Name = "SubTab"
         subTabButton.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
-        subTabButton.BorderColor3 = Color3.fromRGB(0, 0, 0)
         subTabButton.BorderSizePixel = 0
         subTabButton.Size = UDim2.new(0, 180, 0, 34)
         subTabButton.AutoButtonColor = false
         subTabButton.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.SemiBold)
         subTabButton.Text = ""
-        subTabButton.TextColor3 = Color3.fromRGB(0, 0, 0)
         subTabButton.TextSize = 14.000
-        subTabButton.Parent = left_section -- Adding sub-tab button to left section
+        subTabButton.Parent = left_section
 
         local subTabCorner = Instance.new("UICorner")
         subTabCorner.CornerRadius = UDim.new(0, 10)
@@ -466,9 +424,7 @@ function Library:create_tab(name)
         subTabShadow.Name = "Shadow"
         subTabShadow.Parent = subTabButton
         subTabShadow.AnchorPoint = Vector2.new(0.5, 0.5)
-        subTabShadow.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         subTabShadow.BackgroundTransparency = 1.000
-        subTabShadow.BorderColor3 = Color3.fromRGB(0, 0, 0)
         subTabShadow.BorderSizePixel = 0
         subTabShadow.Position = UDim2.new(0.5, 0, 0.5, 0)
         subTabShadow.Size = UDim2.new(0, 200, 0, 54)
@@ -479,9 +435,7 @@ function Library:create_tab(name)
         local subTabLabel = Instance.new("TextLabel")
         subTabLabel.Parent = subTabButton
         subTabLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-        subTabLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         subTabLabel.BackgroundTransparency = 1.000
-        subTabLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
         subTabLabel.BorderSizePixel = 0
         subTabLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
         subTabLabel.Size = UDim2.new(0, 160, 0, 15)
@@ -495,14 +449,11 @@ function Library:create_tab(name)
         local subLeftSection = Instance.new("ScrollingFrame")
         subLeftSection.Name = "SubLeft"
         subLeftSection.Active = true
-        subLeftSection.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         subLeftSection.BackgroundTransparency = 1.000
-        subLeftSection.BorderColor3 = Color3.fromRGB(0, 0, 0)
         subLeftSection.BorderSizePixel = 0
-        subLeftSection.Position = UDim2.new(0, 10, 0, 50) -- Position below sub-tab button
+        subLeftSection.Position = UDim2.new(0, 10, 0, 50)
         subLeftSection.Size = UDim2.new(0, 186, 0, 282)
         subLeftSection.Visible = false
-        subLeftSection.ScrollBarImageColor3 = Color3.fromRGB(0, 0, 0)
         subLeftSection.ScrollBarThickness = 0
         subLeftSection.Parent = left_section
 
@@ -517,7 +468,7 @@ function Library:create_tab(name)
         subLeftPadding.PaddingTop = UDim.new(0, 10)
 
         subTabButton.MouseButton1Click:Connect(function()
-            for _, value in left_section:GetChildren() do
+            for _, value in pairs(left_section:GetChildren()) do
                 if value.Name == "SubLeft" and value ~= subLeftSection then
                     value.Visible = false
                 end
@@ -525,14 +476,11 @@ function Library:create_tab(name)
             subLeftSection.Visible = not subLeftSection.Visible
         end)
 
-        -- Add existing Tab methods to SubTab
         function SubTab:create_title(options)
             local section = options.section == 'left' and subLeftSection or right_section
             local title = Instance.new("TextLabel")
             title.Name = "Title"
-            title.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             title.BackgroundTransparency = 1.000
-            title.BorderColor3 = Color3.fromRGB(0, 0, 0)
             title.BorderSizePixel = 0
             title.Size = UDim2.new(0, 215, 0, 14)
             title.FontFace = Font.new("rbxasset://fonts/families/Montserrat.json", Enum.FontWeight.SemiBold)
@@ -550,13 +498,10 @@ function Library:create_tab(name)
             local toggle = Instance.new("TextButton")
             toggle.Name = "Toggle"
             toggle.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
-            toggle.BorderColor3 = Color3.fromRGB(0, 0, 0)
             toggle.BorderSizePixel = 0
             toggle.Size = UDim2.new(0, 215, 0, 37)
             toggle.AutoButtonColor = false
-            toggle.Font = Enum.Font.SourceSans
             toggle.Text = ""
-            toggle.TextColor3 = Color3.fromRGB(0, 0, 0)
             toggle.TextSize = 14.000
             toggle.Parent = section
 
@@ -567,9 +512,7 @@ function Library:create_tab(name)
             local TextLabel = Instance.new("TextLabel")
             TextLabel.Parent = toggle
             TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-            TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             TextLabel.BackgroundTransparency = 1.000
-            TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
             TextLabel.BorderSizePixel = 0
             TextLabel.Position = UDim2.new(0.424475819, 0, 0.5, 0)
             TextLabel.Size = UDim2.new(0, 155, 0, 15)
@@ -587,7 +530,6 @@ function Library:create_tab(name)
             Box.Parent = toggle
             Box.AnchorPoint = Vector2.new(0.5, 0.5)
             Box.BackgroundColor3 = Color3.fromRGB(22, 23, 27)
-            Box.BorderColor3 = Color3.fromRGB(0, 0, 0)
             Box.BorderSizePixel = 0
             Box.Position = UDim2.new(0.875459313, 0, 0.472972959, 0)
             Box.Size = UDim2.new(0, 27, 0, 21)
@@ -601,7 +543,6 @@ function Library:create_tab(name)
             Knob.Parent = Box
             Knob.AnchorPoint = Vector2.new(0.5, 0.5)
             Knob.BackgroundColor3 = Color3.fromRGB(27, 28, 33)
-            Knob.BorderColor3 = Color3.fromRGB(0, 0, 0)
             Knob.BorderSizePixel = 0
             Knob.Position = UDim2.new(0.333333343, 0, 0.5, 0)
             Knob.Size = UDim2.new(0, 13, 0, 13)
@@ -621,30 +562,16 @@ function Library:create_tab(name)
 
             toggle.MouseButton1Click:Connect(function()
                 Library.Flags[options.flag] = not Library.Flags[options.flag]
-
-                if Library.Flags[options.flag] then
-                    TweenService:Create(Box, TweenInfo.new(0.2), {
-                        BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-                    }):Play()
-                    TweenService:Create(Knob, TweenInfo.new(0.2), {
-                        Position = UDim2.new(0.666666687, 0, 0.5, 0)
-                    }):Play()
-                else
-                    TweenService:Create(Box, TweenInfo.new(0.2), {
-                        BackgroundColor3 = Color3.fromRGB(22, 23, 27)
-                    }):Play()
-                    TweenService:Create(Knob, TweenInfo.new(0.2), {
-                        Position = UDim2.new(0.333333343, 0, 0.5, 0)
-                    }):Play()
-                end
-
+                TweenService:Create(Box, TweenInfo.new(0.2), {
+                    BackgroundColor3 = Library.Flags[options.flag] and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(22, 23, 27)
+                }):Play()
+                TweenService:Create(Knob, TweenInfo.new(0.2), {
+                    Position = UDim2.new(Library.Flags[options.flag] and 0.666666687 or 0.333333343, 0, 0.5, 0)
+                }):Play()
                 options.callback(Library.Flags[options.flag])
                 Library:save_flags()
             end)
         end
-
-        -- Add other existing methods (create_slider, create_dropdown, etc.) similarly to SubTab
-        -- For brevity, I'll omit them here, but they can be copied from the original Tab methods
 
         return SubTab
     end
