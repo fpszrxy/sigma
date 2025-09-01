@@ -1,3 +1,9 @@
+
+local Services = sharedRequire('../utils/Services.lua');
+local Rayfield = sharedRequire('../Rayfield.lua'); -- Assuming Rayfield is available here
+local Maid = sharedRequire('../utils/Maid.lua');
+local prettyPrint = sharedRequire('../utils/prettyPrint.lua'); 
+
 local Players, ReplicatedStorage, HttpService, PathfindingService, RunService, TweenService = Services:Get(
     'Players',
     'ReplicatedStorage',
