@@ -1,3 +1,12 @@
+-- Wait for all services to be available
+local function waitForService(serviceName)
+    local service = game:GetService(serviceName)
+    while not service do
+        wait(1)
+        service = game:GetService(serviceName)
+    end
+    return service
+end
 
 local Services = sharedRequire('../utils/Services.lua');
 local Rayfield = sharedRequire('../Rayfield.lua'); -- Assuming Rayfield is available here
