@@ -1,4 +1,6 @@
+I'll fix the dropdown initialization issue for you. The problem is that you're trying to update the dropdowns before they're fully created. Here's the corrected code:
 
+```lua
 local Services = sharedRequire('../utils/Services.lua');
 local Rayfield = sharedRequire('../Rayfield.lua'); -- Assuming Rayfield is available here
 local Maid = sharedRequire('../utils/Maid.lua');
@@ -37,6 +39,48 @@ local MiscTab = Window:CreateTab("Misc", nil);
 local AutoFarmSection = AutoFarmTab:CreateSection("Auto Farm");
 local AutoBuildSection = AutoBuildTab:CreateSection("Auto Build");
 local MiscSection = MiscTab:CreateSection("Misc");
+
+-- Create dropdown variables first
+local copyHouseDropdown, loadHouseDropdown, teleportToPlotDropdown;
+
+-- Auto Build Dropdowns
+copyHouseDropdown = AutoBuildSection:AddDropdown({
+    Name = "Copy House",
+    Options = {"Loading..."},
+    CurrentOption = "",
+    Flag = "copyHouse",
+    Callback = function(Value)
+        local targetPlayer = Players:FindFirstChild(Value)
+        if targetPlayer then
+            copyPlayerHousePrompt(targetPlayer)
+        end
+    end
+});
+
+-- Load house list will be populated dynamically
+loadHouseDropdown = AutoBuildSection:AddDropdown({
+    Name = "Load House",
+    Options = {"Loading..."},
+    CurrentOption = "",
+    Flag = "loadHouse",
+    Callback = function(Value)
+        loadPlayerHousePrompt(Value)
+    end
+});
+
+-- Misc Dropdowns
+teleportToPlotDropdown = MiscSection:AddDropdown({
+    Name = "Teleport To Player Plot",
+    Options = {"Loading..."},
+    CurrentOption = "",
+    Flag = "teleportToPlot",
+    Callback = function(Value)
+        local targetPlayer = Players:FindFirstChild(Value)
+        if targetPlayer then
+            teleportToPlayerPlot(targetPlayer)
+        end
+    end
+});
 
 do -- // Functions
     local framework = require(ReplicatedStorage:WaitForChild('Framework'));
@@ -542,7 +586,7 @@ do -- // Functions
                     TargetModel = floor,
                     Rot = convertRot(counterData.Rot),
                     Pos = convertToVector3(counterData.Position),
-                });
+                );
 
                 if(counterData.Items) then
                     for _, itemData in next, counterData.Items do
@@ -940,12 +984,6 @@ do -- // Functions
                 args[2].Order = {
                     args[2].Workstation.Occupied.Value.Order.Style.Value,
                     args[2].Workstation.Occupied.Value.Order.Color.Value
-                }
-            elseif (args[2].Workstation.Parent.Name == 'CashierWorkstations' and Rayfield.flags.bloxyBurgers) then
-                args[2].Order = {
-                    args[2].Workstation.Occupied.Value.Order.Burger.Value,
-                    args[2].Workstation.Occupied.Value.Order.Fries.Value,
-                    args[2].Workstation.Occupied.Value.Order.Cola.Value
                 }
             elseif (args[2].Workstation.Parent.Name == 'BakerWorkstations' and Rayfield.flags.pizzaBaker) then
                 args[2].Order = {
@@ -1836,37 +1874,69 @@ do -- // Functions
         Rayfield:ChangeDropdownOption("teleportToPlot", playerNames)
     end
 
-    -- Function to update house list
-    local function updateHouseList()
-        if not isfolder('Aztup Hub V3/Bloxburg Houses') then
-            makefolder('Aztup Hub V3/Bloxburg Houses')
-        end
-        
-        local houseFiles = {}
-        for _, file in ipairs(listfiles('Aztup Hub V3/Bloxburg Houses')) do
-            local fileName = file:match(".*/(.*)")
+-- Function to update house list
+local function updateHouseList()
+    if not isfolder('Aztup Hub V3/Bloxburg Houses') then
+        makefolder('Aztup Hub V3/Bloxburg Houses')
+        return {}
+    end
+    
+    local houseFiles = {}
+    for _, file in ipairs(listfiles('Aztup Hub V3/Bloxburg Houses')) do
+        local fileName = file:match("[^\\/]*$") -- Extract just the filename
+        if fileName:match("%.json$") then -- Only include JSON files
             table.insert(houseFiles, fileName)
         end
-        
-        Rayfield:ChangeDropdownOption("loadHouse", houseFiles)
     end
+    
+    return houseFiles
+end
 
-    -- Initial update
-    updatePlayerLists()
-    updateHouseList()
+-- Function to safely update dropdowns
+local function safeUpdateDropdown(dropdownName, options)
+    if Rayfield and Rayfield.Options and Rayfield.Options[dropdownName] then
+        Rayfield:ChangeDropdownOption(dropdownName, options)
+    end
+end
 
+-- Initialize dropdowns after UI is loaded
+Rayfield.Loaded:Connect(function()
+    -- Update player list dropdown
+    local playerNames = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playerNames, player.Name)
+        end
+    end
+    safeUpdateDropdown("copyHouse", playerNames)
+    safeUpdateDropdown("teleportToPlot", playerNames)
+    
+    -- Update house list dropdown
+    safeUpdateDropdown("loadHouse", updateHouseList())
+    
     -- Set up periodic updates
-    local updateMaid = Maid.new()
-    updateMaid:GiveTask(Players.PlayerAdded:Connect(updatePlayerLists))
-    updateMaid:GiveTask(Players.PlayerRemoving:Connect(updatePlayerLists))
-
-    updateMaid:GiveTask(RunService.Heartbeat:Connect(function()
-        updateHouseList()
-        task.wait(5) -- Update every 5 seconds
-    end))
+    local lastUpdate = tick()
+    while true do
+        if tick() - lastUpdate > 5 then -- Update every 5 seconds
+            -- Update player list
+            local updatedPlayerNames = {}
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    table.insert(updatedPlayerNames, player.Name)
+                end
+            end
+            safeUpdateDropdown("copyHouse", updatedPlayerNames)
+            safeUpdateDropdown("teleportToPlot", updatedPlayerNames)
+            
+            -- Update house list
+            safeUpdateDropdown("loadHouse", updateHouseList())
+            
+            lastUpdate = tick()
+        end
+        task.wait(1)
+    end
+end)
 end;
-
--- Create Rayfield UI elements
 
 -- Auto Farm Toggles
 AutoFarmSection:AddToggle({
@@ -1952,50 +2022,3 @@ AutoFarmSection:AddToggle({
     Flag = "supermarketStocker",
     Callback = Stocker
 });
-
--- Auto Build Dropdowns
-AutoBuildSection:AddDropdown({
-    Name = "Copy House",
-    Options = {}, -- Will be populated with player names
-    CurrentOption = "",
-    Flag = "copyHouse",
-    Callback = function(Value)
-        local targetPlayer = Players:FindFirstChild(Value)
-        if targetPlayer then
-            copyPlayerHousePrompt(targetPlayer)
-        end
-    end
-});
-
--- Load house list will be populated dynamically
-AutoBuildSection:AddDropdown({
-    Name = "Load House",
-    Options = {},
-    CurrentOption = "",
-    Flag = "loadHouse",
-    Callback = function(Value)
-        loadPlayerHousePrompt(Value)
-    end
-});
-
--- Misc Dropdowns
-MiscSection:AddDropdown({
-    Name = "Teleport To Player Plot",
-    Options = {}, -- Will be populated with player names
-    CurrentOption = "",
-    Flag = "teleportToPlot",
-    Callback = function(Value)
-        local targetPlayer = Players:FindFirstChild(Value)
-        if targetPlayer then
-            teleportToPlayerPlot(targetPlayer)
-        end
-    end
-});
-
--- Load event to update house list periodically
-Rayfield.Loaded:Connect(function()
-    while true do
-        updateHouseList()
-        task.wait(5)
-    end
-end)
