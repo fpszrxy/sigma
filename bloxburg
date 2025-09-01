@@ -1,6 +1,4 @@
-I'll fix the dropdown initialization issue for you. The problem is that you're trying to update the dropdowns before they're fully created. Here's the corrected code:
 
-```lua
 local Services = sharedRequire('../utils/Services.lua');
 local Rayfield = sharedRequire('../Rayfield.lua'); -- Assuming Rayfield is available here
 local Maid = sharedRequire('../utils/Maid.lua');
