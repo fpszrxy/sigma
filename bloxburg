@@ -47,21 +47,40 @@ local teleportToPlotDropdown = MiscSection:AddDropdown({
 
 do -- Initialize Framework and Functions
     local framework = require(ReplicatedStorage:WaitForChild('Framework'))
-    local env = getupvalue(framework, 3)
-    if not env then error("Failed to retrieve framework environment") end
+    local success, env = pcall(getupvalue, framework, 3)
+    if not success or not env then
+        warn("Failed to retrieve framework environment with upvalue 3, attempting alternative access")
+        env = framework -- Fallback to original require if upvalue fails
+    end
     framework = env
 
     local modules, network, jobManager, guiHandler
     repeat
-        task.wait()
-        modules = framework.Modules
-        if not modules then continue end
-        network = modules.net or framework.net
-        if not network then continue end
-        jobManager = modules.JobHandler
-        if not jobManager then continue end
-        guiHandler = modules.GUIHandler
-        if not guiHandler then continue end
+        task.wait(0.1) -- Small delay to prevent tight loop
+        if type(framework) ~= "table" then
+            warn("Framework is not a table, skipping iteration")
+            continue
+        end
+        modules = framework.Modules or (framework:FindFirstChild("Modules") and framework.Modules.Value) -- Try dynamic access
+        if not modules or type(modules) ~= "table" then
+            warn("Modules not found or invalid")
+            continue
+        end
+        network = modules.net or framework.net or (modules:FindFirstChild("net") and modules.net.Value)
+        if not network or type(network) ~= "table" then
+            warn("Network not found or invalid")
+            continue
+        end
+        jobManager = modules.JobHandler or (modules:FindFirstChild("JobHandler") and modules.JobHandler.Value)
+        if not jobManager or type(jobManager) ~= "table" then
+            warn("JobHandler not found or invalid")
+            continue
+        end
+        guiHandler = modules.GUIHandler or (modules:FindFirstChild("GUIHandler") and modules.GUIHandler.Value)
+        if not guiHandler or type(guiHandler) ~= "table" then
+            warn("GUIHandler not found or invalid")
+            continue
+        end
     until modules and network and jobManager and guiHandler
 
     if not isfolder('Aztup Hub V3/Bloxburg Houses') then
@@ -382,7 +401,7 @@ do -- Initialize Framework and Functions
                 for _, fence in ipairs(obj.Fences) do
                     local fenceObj = framework.net:InvokeServer({Type = 'PlaceObject', Name = fence.Name, Pos = convertToVector3(fence.From, ground),
                                                                 RailingSegment = item.ObjectModel.Railings[fence.Segment]})
-                    framework.net:InvokeServer({Type = 'ColorObject', Object = fenceObj, UseMaterials = true, Data = fence AppearanceData})
+                    framework.net:InvokeServer({Type = 'ColorObject', Object = fenceObj, UseMaterials = true, Data = fence.AppearanceData})
                 end
             end
             if obj.Items then
