@@ -48,21 +48,34 @@ local teleportToPlotDropdown = MiscSection:AddDropdown({
 do -- Initialize Framework and Functions
     local framework = require(ReplicatedStorage:WaitForChild('Framework'))
     local modules, network, jobManager, guiHandler
+    local frameworkEnv = nil
 
-    -- Attempt to call framework as a function if it is one
-    local success, result = pcall(function() return framework() end)
-    if success and type(result) == "table" then
-        framework = result
-    elseif typeof(framework) == "Instance" then
-        -- If framework is an Instance, look for Modules as a child
-        local modulesChild = framework:FindFirstChild("Modules")
-        if modulesChild and modulesChild:IsA("ModuleScript") then
-            framework = require(modulesChild)
-        end
+    -- Log framework details for debugging
+    warn("Framework type:", typeof(framework))
+    if typeof(framework) == "RBXScriptSignal" then
+        warn("Framework is a signal, attempting to connect...")
+        local connection
+        connection = framework:Connect(function(...)
+            local args = {...}
+            for _, arg in ipairs(args) do
+                if type(arg) == "table" and arg.Modules then
+                    frameworkEnv = arg
+                    warn("Found module environment in signal data")
+                    connection:Disconnect()
+                    break
+                end
+            end
+        end)
+        task.wait(5) -- Wait for potential signal fire
+        if connection then connection:Disconnect() end
     end
 
-    -- Log framework type for debugging
-    warn("Framework type:", typeof(framework))
+    -- Fallback to direct framework if no environment found
+    if not frameworkEnv then
+        frameworkEnv = framework
+        warn("Using framework directly as fallback")
+    end
+    framework = frameworkEnv
 
     repeat
         task.wait(0.1)
