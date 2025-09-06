@@ -1,1 +1,245 @@
+-- Webhook Event Notifier
+local webhookURL = "https://discord.com/api/webhooks/1414016270415691806/w-GrZDpXe6tAUItFjtD2GMsNGZ6OrDbE_gBZoJRZrRtm-VmkmLYhALrTKz4IJCqzAunv"
+local lastEvent = "None"
+local lastStatus = "None"
+local checkInterval = 180 -- 3 minutes
+local eventCooldown = 300
+local webhookEnabled = true
 
+--// Pick request function for executor
+local requestFunc = http_request or request or (syn and syn.request)
+if not requestFunc then
+    return
+end
+
+-- Send event message to Discord webhook
+local function sendEventWebhook(eventName)
+    if not webhookEnabled or webhookURL == "" or not requestFunc then return end
+    
+    local currentTime = os.date("%Y-%m-%d %H:%M:%S")
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+
+    local teleportSnippet = string.format(
+        "```lua\nlocal TeleportService = game:GetService(\"TeleportService\")\nlocal Player = game:GetService(\"Players\").LocalPlayer\nlocal GameID = %d\nlocal ServerID = \"%s\"\nTeleportService:TeleportToPlaceInstance(GameID, ServerID, Player)\n```",
+        placeId,
+        jobId
+    )
+
+    local embed = {
+        title = "🚨 EVENT DETECTED!",
+        description = "A new event has been spotted in the game!",
+        color = 5763719,
+        fields = {
+            {
+                name = "Event Type",
+                value = "**" .. eventName .. "**",
+                inline = true
+            },
+            {
+                name = "Job ID",
+                value = "`" .. jobId .. "`",
+                inline = true
+            },
+            {
+                name = "Teleport Script",
+                value = teleportSnippet,
+                inline = false
+            }
+        },
+        footer = {
+            text = "Event Detection System"
+        },
+        timestamp = currentTime
+    }
+    
+    local message = {
+        content = "🌊 **EVENT DETECTED!** 🌊",
+        embeds = {embed}
+    }
+    
+    local success, response = pcall(function()
+        return requestFunc({
+            Url = webhookURL,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = game:GetService("HttpService"):JSONEncode(message)
+        })
+    end)
+end
+
+-- Event detection function (from your script)
+local function getEventLocation()
+    local props = workspace:FindFirstChild("Props")
+
+    if props then
+        local blackHole = props:FindFirstChild("BlackHole")
+        if blackHole then return blackHole, "Wormhole" end
+
+        local ghostShark = props:FindFirstChild("Ghost Shark Hunt")
+        if ghostShark and ghostShark:FindFirstChild("Part") then
+            return ghostShark.Part, "Ghost Shark Hunt"
+        end
+
+        local sharkHunt = props:FindFirstChild("Shark Hunt")
+        if sharkHunt and sharkHunt:FindFirstChild("Color") then
+            return sharkHunt.Color, "Shark Hunt"
+        end
+    end
+
+    if props and props:FindFirstChild("Model") then
+        local model = props.Model
+        local blackHole = model:FindFirstChild("BlackHole")
+        if blackHole then return blackHole, "Wormhole" end
+
+        local ghostShark = model:FindFirstChild("Ghost Shark Hunt")
+        if ghostShark and ghostShark:FindFirstChild("Part") then
+            return ghostShark.Part, "Ghost Shark Hunt"
+        end
+
+        local sharkHunt = model:FindFirstChild("Shark Hunt")
+        if sharkHunt and sharkHunt:FindFirstChild("Color") then
+            return sharkHunt.Color, "Shark Hunt"
+        end
+    end
+
+    return nil, "None"
+end
+
+-- Main detection loop
+local function startEventDetection()
+    local lastEventTime = 0
+    
+    while webhookEnabled do
+        local eventObject, currentEvent = getEventLocation()
+        local currentTime = tick()
+        
+        if currentEvent ~= "None" then
+            -- Event detected
+            if currentEvent ~= lastEvent then
+                if currentTime - lastEventTime >= eventCooldown then
+                    sendEventWebhook(currentEvent)
+                    lastEventTime = currentTime
+                    lastEvent = currentEvent
+                    lastStatus = "Event"
+                end
+            end
+        else
+            -- No event detected
+            if lastEvent ~= "None" then
+                lastEvent = "None"
+                lastStatus = "NoEvent"
+            else
+                lastStatus = "NoEvent"
+            end
+        end
+        
+        wait(checkInterval) -- Wait 3 minutes between checks
+    end
+end
+
+-- Initialize the webhook bot
+local eventDetectionThread = nil
+local function initWebhookBot()
+    -- Stop existing thread if running
+    if eventDetectionThread then
+        task.cancel(eventDetectionThread)
+        eventDetectionThread = nil
+    end
+    
+    if not webhookEnabled then
+        return
+    end
+    
+    -- Start in a new thread
+    eventDetectionThread = task.spawn(startEventDetection)
+end
+
+-- Create webhook controls (only if Webhook tab exists)
+if Tabs and Tabs.Webhook then
+    local WebhookGroup = Tabs.Webhook:AddLeftGroupbox('Event Webhook Settings')
+
+    WebhookGroup:AddToggle('WebhookEnabled', {
+        Text = 'Enable Event Webhook',
+        Default = true,
+        Tooltip = 'Send Discord notifications for events',
+        Callback = function(Value)
+            webhookEnabled = Value
+            if Value then
+                initWebhookBot()
+                Library:Notify("Event webhook enabled", nil, 3)
+            else
+                Library:Notify("Event webhook disabled", nil, 3)
+            end
+        end
+    })
+
+    WebhookGroup:AddSlider('CheckIntervalSlider', {
+        Text = 'Check Interval',
+        Default = 180,
+        Min = 60,
+        Max = 600,
+        Rounding = 30,
+        Suffix = 'seconds',
+        Tooltip = 'Time between event checks (3 minutes = 180 seconds)',
+        Callback = function(Value)
+            checkInterval = Value
+            Library:Notify("Check interval set to " .. Value .. " seconds", nil, 3)
+            -- Restart detection with new interval
+            if webhookEnabled then
+                initWebhookBot()
+            end
+        end
+    })
+
+    WebhookGroup:AddSlider('EventCooldownSlider', {
+        Text = 'Event Cooldown',
+        Default = 300,
+        Min = 60,
+        Max = 600,
+        Rounding = 30,
+        Suffix = 'seconds',
+        Callback = function(Value)
+            eventCooldown = Value
+            Library:Notify("Event cooldown set to " .. Value .. " seconds", nil, 3)
+        end
+    })
+
+    -- Add status display
+    local StatusGroup = Tabs.Webhook:AddRightGroupbox('Webhook Status')
+    local statusLabel = StatusGroup:AddLabel("Status: Not Initialized")
+    local lastEventLabel = StatusGroup:AddLabel("Last Event: None")
+    local nextCheckLabel = StatusGroup:AddLabel("Next Check: 180s")
+
+    -- Update status labels
+    task.spawn(function()
+        while true do
+            wait(1)
+            statusLabel:SetText("Status: " .. lastStatus)
+            lastEventLabel:SetText("Last Event: " .. lastEvent)
+            nextCheckLabel:SetText("Next Check: " .. checkInterval .. "s")
+        end
+    end)
+
+    -- Test button
+    StatusGroup:AddButton({
+        Text = 'Test Event Notification',
+        Func = function()
+            sendEventWebhook("Test Event")
+            Library:Notify("Test event notification sent", nil, 3)
+        end
+    })
+end
+
+-- Wait 10 seconds then auto-start the webhook bot
+task.delay(8, function()
+    initWebhookBot()
+end)
+
+-- Cleanup when script stops
+game:GetService("Players").LocalPlayer.CharacterRemoving:Connect(function()
+    if eventDetectionThread then
+        task.cancel(eventDetectionThread)
+        eventDetectionThread = nil
+    end
+end)
