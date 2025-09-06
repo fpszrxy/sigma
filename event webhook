@@ -232,7 +232,7 @@ if Tabs and Tabs.Webhook then
 end
 
 -- Wait 10 seconds then auto-start the webhook bot
-task.delay(8, function()
+task.delay(1, function()
     initWebhookBot()
 end)
 
