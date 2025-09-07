@@ -1,1 +1,110 @@
+--// Services
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
+--// Replion
+local Replion = require(ReplicatedStorage.Packages.Replion)
+
+--// Pick request function for executor
+local requestFunc = http_request or request or syn and syn.request
+if not requestFunc then
+    warn("[ServerLuck Bot] No HTTP request function found in this executor")
+    return
+end
+
+--// Webhook
+local WEBHOOK_URL = "URL_HERE"
+
+---------------------------------------------------------------------
+--// Format helpers
+local function formatTime(seconds)
+    local hrs = math.floor(seconds / 3600)
+    local mins = math.floor((seconds % 3600) / 60)
+    local secs = math.floor(seconds % 60)
+    if hrs > 0 then
+        return string.format("%dh %dm %ds", hrs, mins, secs)
+    elseif mins > 0 then
+        return string.format("%dm %ds", mins, secs)
+    else
+        return string.format("%ds", secs)
+    end
+end
+
+---------------------------------------------------------------------
+--// State
+local lastSentJobId = nil
+local lastSent = false
+
+---------------------------------------------------------------------
+--// Luck webhook
+local function sendLuckWebhook(multiplier, expires)
+    local timeLeft = math.max(expires - workspace:GetServerTimeNow(), 0)
+    if timeLeft <= 0 then return end
+
+    local placeId = game.PlaceId
+    local jobId = game.JobId
+
+    -- :white_check_mark: don’t double send for the same server unless reset
+    if lastSentJobId == jobId and lastSent then
+        return
+    end
+
+    lastSentJobId = jobId
+    lastSent = true
+
+    local formattedTime = formatTime(timeLeft)
+    local joinLink = string.format("https://www.roblox.com/games/%d?privateServerLinkCode=%s", placeId, jobId)
+
+    local teleportSnippet = string.format(
+        "```lua\nlocal TeleportService = game:GetService(\"TeleportService\")\nlocal Player = game:GetService(\"Players\").LocalPlayer\nlocal GameID = %d\nlocal ServerID = \"%s\"\nTeleportService:TeleportToPlaceInstance(GameID, ServerID, Player)\n```",
+        placeId,
+        jobId
+    )
+
+    local embed = {
+        ["title"] = ":four_leaf_clover: Server Luck Active",
+        ["color"] = 0x00FF00,
+        ["fields"] = {
+            {["name"] = "Luck Boost", ["value"] = "x" .. tostring(multiplier), ["inline"] = true},
+            {["name"] = "Time Left", ["value"] = formattedTime, ["inline"] = true},
+            {["name"] = "Join Server", ["value"] = "[Click to Join](" .. joinLink .. ")", ["inline"] = false},
+            {["name"] = "Teleport Script", ["value"] = teleportSnippet, ["inline"] = false}
+        },
+        ["footer"] = {["text"] = "Fish It Notifier"}
+    }
+
+    requestFunc({
+        Url = WEBHOOK_URL,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode({username = "Server Luck Bot", embeds = {embed}})
+    })
+end
+
+---------------------------------------------------------------------
+--// Hook into ServerLuck
+task.spawn(function()
+    local serverLuck = Replion.Client:WaitReplion("ServerLuck")
+
+    -- Initial check
+    if serverLuck:GetExpect("ServerMultiplier") > 1 then
+        sendLuckWebhook(serverLuck:GetExpect("ServerMultiplier"), serverLuck:GetExpect("Expires"))
+    end
+
+    -- When multiplier changes
+    serverLuck:OnChange("ServerMultiplier", function(newValue, _)
+        if newValue > 1 then
+            sendLuckWebhook(newValue, serverLuck:GetExpect("Expires"))
+        else
+            -- reset when luck ends
+            lastSent = false
+        end
+    end)
+
+    -- When expiry changes (only relevant if multiplier > 1)
+    serverLuck:OnChange("Expires", function(newValue, _)
+        if serverLuck:GetExpect("ServerMultiplier") > 1 then
+            sendLuckWebhook(serverLuck:GetExpect("ServerMultiplier"), newValue)
+        end
+    end)
+end)
