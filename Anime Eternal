@@ -1,1 +1,707 @@
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+
+-- Luna Interface Suite Setup
+local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua", true))()
+
+local Window = Luna:CreateWindow({
+    Name = "Chase  sdd Hub",
+    Subtitle = "by Chase ",
+    LogoID = "4483362458",
+    LoadingEnabled = true,
+    LoadingTitle = "Chase  sdd Hub Interface",
+    LoadingSubtitle = "by Chase ",
+    ConfigSettings = {
+        RootFolder = nil,
+        ConfigFolder = "Chase Scripts"
+    },
+    KeySystem = false,
+    KeySettings = {
+        Title = "Chase  sdd Hub Key",
+        Subtitle = "Key System",
+        Note = "No key required for this script.",
+        SaveInRoot = false,
+        SaveKey = false,
+        Key = {"none"},
+        SecondAction = {
+            Enabled = false,
+            Type = "Link",
+            Parameter = ""
+        }
+    }
+})
+
+-- Home Tab
+Window:CreateHomeTab({
+    SupportedExecutors = {
+        -- Windows Executors
+        "Synapse X", "Krnl", "ProtoSmasher", "Fluxus", "Script-Ware",
+        "EasyExploits", "Electron", "JJSploit", "Calamari", "SirHurt",
+        "Sentinel", "WEAREDEVS", "Comet", "Cellery", "Wave", "CODex", "Delta", "Potassium",
+        
+        -- Additional Windows Executors
+        "X-axis", "Y-axis", "Y-bottom", "VolumPy", "Swift", "Software", "Token",
+        "Footmaker", "Modem", "Token Kit", "Menu Kit", "Turnful Kit", "Start Kit",
+        "Lovington Kit", "Hydrogen Kit", "Moosplat Kit", "Optumicon Kit", "Pyragon Mac Kit",
+        
+        -- Android Executors
+        "Delta Kit", "Ford Kit", "Cookie Kit", "Cryptic Kit",
+        
+        -- iOS Executors
+        "Delta Kit", "Ford Kit",
+        
+        -- Windows External Executors
+        "Iconic Kit", "Include Kit", "Snapchat Kit", "Multimedia Kit", "Assembly Kit"
+    },
+    DiscordInvite = "https://discord.gg/PAy8Ht3SDC",
+    Icon = nil
+})
+
+-- Main Tab
+local MainTab = Window:CreateTab({
+    Name = "Main",
+    Icon = nil,
+    ShowTitle = true
+})
+
+-- Auto Open Egg Tab
+local EggTab = Window:CreateTab({
+    Name = "Auto Open Egg",
+    Icon = nil,
+    ShowTitle = true
+})
+
+-- Config Tab
+local ConfigTab = Window:CreateTab({
+    Name = "Config",
+    Icon = nil,
+    ShowTitle = true
+})
+ConfigTab:BuildConfigSection()
+
+-- Configuration
+local AURA_RADIUS = 40
+local CHECK_INTERVAL = 0.01
+local EVENT_NAME = "To_Server"
+local RANK_UP_INTERVAL = 1
+local EGG_OPEN_INTERVAL = 7
+local REWARD_CLAIM_INTERVAL = 5
+local QUEST_INTERVAL = 0.5
+local TELEPORT_INTERVAL = 3 -- Default teleport interval (seconds)
+
+local WORLD_STAR_MAP = {
+    ["Earth City"] = "Star_1",
+    ["Windmill Island"] = "Star_2",
+    ["Soul Society"] = "Star_3",
+    ["Cursed School"] = "Star_4",
+    ["Slayer Village"] = "Star_5",
+    ["Solo Island"] = "Star_6",
+    ["Clover Village"] = "Star_7",
+    ["Leaf Village"] = "Star_8",
+    ["Spirit Residence"] = "Star_9",
+    ["Magic Hunter City"] = "Star_10",
+    ["Titan City"] = "Star_11",
+    ["Village of Sins"] = "Star_12",
+    ["Kajju Base"] = "Star_13",
+    ["Tempest Capital"] = "Star_14",
+    ["Virtual City"] = "Star_15",
+    ["Cairo"] = "Star_16",
+    ["Ghoul City"] = "Star_17",
+    ["Chainsaw City"] = "Star_18",
+    ["Tokyo Empire"] = "Star_19"
+}
+
+local LocalPlayer = Players.LocalPlayer
+
+local killAuraEnabled = false
+local autoRankUpEnabled = false
+local autoOpenEggEnabled = false
+local autoClaimTimeRewardEnabled = false
+local autoQuestEnabled = false
+local autoTeleportEnabled = false
+local killAuraConnection = nil
+local rankUpConnection = nil
+local eggOpenConnection = nil
+local claimTimeRewardConnection = nil
+local questConnection = nil
+local teleportConnection = nil
+local Event = game:GetService("ReplicatedStorage").Events.To_Server
+local selectedWorld = "Earth City"
+
+local KillAuraToggle
+local AutoRankUpToggle
+local AutoOpenEggToggle
+local AutoClaimTimeRewardToggle
+local AutoQuestToggle
+local AutoTeleportToggle
+local WorldDropdown
+local TeleportIntervalTextBox
+
+local function triggerKillAura()
+    local Character = LocalPlayer.Character
+    if not Character or not Character:IsDescendantOf(Workspace) then
+        return
+    end
+    
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+    if not HumanoidRootPart then
+        return
+    end
+    
+    local possibleMonsterFolders = {
+        Workspace:FindFirstChild("Debris"),
+        Workspace:FindFirstChild("Monsters"),
+        Workspace
+    }
+    
+    local MonstersFolder
+    for _, folder in ipairs(possibleMonsterFolders) do
+        if folder and folder:FindFirstChild("Monsters") then
+            MonstersFolder = folder:FindFirstChild("Monsters")
+            break
+        end
+    end
+    
+    if not MonstersFolder then
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and (obj.Name:lower():find("monster") or obj.Name:lower():find("mob") or obj.Name:lower():find("enemy")) then
+                local distance = (HumanoidRootPart.Position - obj.HumanoidRootPart.Position).Magnitude
+                if distance <= AURA_RADIUS then
+                    Event:FireServer({
+                        Id = obj.Name,
+                        Action = "_Mouse_Click"
+                    })
+                end
+            end
+        end
+        return
+    end
+    
+    for _, monster in ipairs(MonstersFolder:GetChildren()) do
+        if monster:IsA("Model") then
+            local monsterRootPart = monster:FindFirstChild("HumanoidRootPart")
+            if monsterRootPart then
+                local distance = (HumanoidRootPart.Position - monsterRootPart.Position).Magnitude
+                if distance <= AURA_RADIUS then
+                    Event:FireServer({
+                        Id = monster.Name,
+                        Action = "_Mouse_Click"
+                    })
+                end
+            end
+        end
+    end
+end
+
+local function performRankUp()
+    if Event then
+        pcall(function()
+            Event:FireServer({
+                Upgrading_Name = "Rank",
+                Action = "_Upgrades",
+                Upgrade_Name = "Rank_Up"
+            })
+        end)
+    end
+end
+
+local function performEggOpen()
+    if Event and WORLD_STAR_MAP[selectedWorld] then
+        pcall(function()
+            Event:FireServer({
+                Open_Amount = 5,
+                Action = "_Stars",
+                Name = WORLD_STAR_MAP[selectedWorld]
+            })
+        end)
+    end
+end
+
+local function performClaimTimeReward()
+    if Event then
+        for id = 1, 9 do
+            pcall(function()
+                Event:FireServer({
+                    Action = "_Hourly_Rewards",
+                    Id = id
+                })
+                print("Sent Claim for Reward Id:", id)
+            end)
+            wait(0.2)
+        end
+        Luna:Notification({
+            Title = "Auto Claim Time Reward",
+            Content = "Time rewards claimed",
+        })
+    else
+        print("Event not found at ReplicatedStorage.Events.To_Server")
+    end
+end
+
+local function performAutoQuest()
+    if Event then
+        local questBatchSize = 50
+        local questCurrentId = 1
+        while questCurrentId <= 114 do
+            for i = questCurrentId, math.min(questCurrentId + questBatchSize - 1, 114) do
+                pcall(function()
+                    Event:FireServer({
+                        Id = tostring(i),
+                        Type = "Accept",
+                        Action = "_Quest"
+                    })
+                    print("Sent Accept for Quest Id:", i)
+                    Event:FireServer({
+                        Id = tostring(i),
+                        Type = "Complete",
+                        Action = "_Quest"
+                    })
+                    print("Sent Complete for Quest Id:", i)
+                end)
+                wait(0.2)
+            end
+            questCurrentId = questCurrentId + questBatchSize
+            wait(1)
+        end
+    else
+        print("Event not found at ReplicatedStorage.Events.To_Server")
+    end
+end
+
+local function redeemAllCodes()
+    local codes = {
+        "420KFav",
+        "BugsUpdate15",
+        "2BugsUpdate15",
+        "Update15Delay",
+        "Update15",
+        "195KLikes",
+        "200KLikes",
+        "425KFav",
+        "Update14P3",
+        "185KLikes",
+        "190KLikes",
+        "410KFav",
+        "415KFav",
+        "51kPlayers",
+        "52kPlayers",
+        "53kPlayers",
+        "?43KRecord?",
+        "44KRecord??",
+        "Record45K?!",
+        "?Record46K?!",
+        "NewRecord47k",
+        "SupaRecord48k",
+        "Supa49kRecord",
+        "Ultra50KRecord",
+        "Update14P2",
+        "175KLikes",
+        "180KLikes",
+        "400KFav",
+        "405KFav",
+        "?42K?",
+        "SomeQuickFix1a",
+        "SomeQuickFix2",
+        "?41KRecord?",
+        "40KRecord?",
+        "39KRecordCcu",
+        "Update14",
+        "170KLikes",
+        "50MVisits",
+        "395KFav",
+        "390KFav",
+        "DungeonQuickFix",
+        "Update13P3",
+        "165KLikes",
+        "375KFav",
+        "380KFav",
+        "385KFav",
+        "1GhoulKeyNoMore",
+        "IWantKey",
+        "Online36K",
+        "37KPlayersOn",
+        "38KRecord",
+        "Update13P2",
+        "50K",
+        "160KLikes",
+        "34KOnline",
+        "35KCCU",
+        "Update13",
+        "155KLikes",
+        "350KFav",
+        "360KFav",
+        "40MVisits",
+        "DungeonFall1",
+        "Update12.5",
+        "Update12.2",
+        "Update12.2Late",
+        "Update12"
+    }
+
+    for _, code in ipairs(codes) do
+        pcall(function()
+            Event:FireServer({
+                Action = "_Redeem_Code",
+                Text = code
+            })
+            print("Attempted to redeem code:", code)
+        end)
+        wait(0.5)
+    end
+    Luna:Notification({
+        Title = "Redeem All Codes",
+        Content = "Attempted to redeem all codes",
+    })
+end
+
+local function teleportToRandomMonster()
+    local Character = LocalPlayer.Character
+    if not Character or not Character:IsDescendantOf(Workspace) then
+        return
+    end
+    
+    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
+    if not HumanoidRootPart then
+        return
+    end
+    
+    local MonstersFolder = Workspace:FindFirstChild("Debris") and Workspace.Debris:FindFirstChild("Monsters")
+    if not MonstersFolder then
+        print("Monsters folder not found at Workspace.Debris.Monsters")
+        return
+    end
+    
+    local monsters = {}
+    for _, monster in ipairs(MonstersFolder:GetChildren()) do
+        if monster:IsA("Model") and monster:FindFirstChild("HumanoidRootPart") then
+            table.insert(monsters, monster)
+        end
+    end
+    
+    if #monsters == 0 then
+        print("No valid monsters found to teleport to")
+        return
+    end
+    
+    local randomMonster = monsters[math.random(1, #monsters)]
+    local monsterRootPart = randomMonster:FindFirstChild("HumanoidRootPart")
+    if monsterRootPart then
+        HumanoidRootPart.CFrame = monsterRootPart.CFrame * CFrame.new(0, 5, 0)
+        print("Teleported to monster:", randomMonster.Name)
+    end
+end
+
+local function toggleKillAura(state)
+    killAuraEnabled = state
+    
+    if killAuraEnabled then
+        killAuraConnection = RunService.Heartbeat:Connect(function()
+            pcall(triggerKillAura)
+        end)
+        
+        Luna:Notification({
+            Title = "Kill Aura",
+            Content = "Kill Aura Enabled",
+        })
+    else
+        if killAuraConnection then
+            killAuraConnection:Disconnect()
+            killAuraConnection = nil
+        end
+        
+        Luna:Notification({
+            Title = "Kill Aura",
+            Content = "Kill Aura Disabled",
+        })
+    end
+end
+
+local function toggleAutoRankUp(state)
+    autoRankUpEnabled = state
+    
+    if autoRankUpEnabled then
+        local lastRankUp = 0
+        rankUpConnection = RunService.Heartbeat:Connect(function()
+            local now = tick()
+            if now - lastRankUp >= RANK_UP_INTERVAL then
+                lastRankUp = now
+                performRankUp()
+            end
+        end)
+        
+        Luna:Notification({
+            Title = "Auto Rank Up",
+            Content = "Auto Rank Up Enabled",
+        })
+    else
+        if rankUpConnection then
+            rankUpConnection:Disconnect()
+            rankUpConnection = nil
+        end
+        
+        Luna:Notification({
+            Title = "Auto Rank Up",
+            Content = "Auto Rank Up Disabled",
+        })
+    end
+end
+
+local function toggleAutoOpenEgg(state)
+    autoOpenEggEnabled = state
+    
+    if autoOpenEggEnabled then
+        local lastEggOpen = 0
+        eggOpenConnection = RunService.Heartbeat:Connect(function()
+            local now = tick()
+            if now - lastEggOpen >= EGG_OPEN_INTERVAL then
+                lastEggOpen = now
+                performEggOpen()
+            end
+        end)
+        
+        Luna:Notification({
+            Title = "Auto Open Egg",
+            Content = "Auto Open Egg Enabled",
+        })
+    else
+        if eggOpenConnection then
+            eggOpenConnection:Disconnect()
+            eggOpenConnection = nil
+        end
+        
+        Luna:Notification({
+            Title = "Auto Open Egg",
+            Content = "Auto Open Egg Disabled",
+        })
+    end
+end
+
+local function toggleAutoClaimTimeReward(state)
+    autoClaimTimeRewardEnabled = state
+    
+    if autoClaimTimeRewardEnabled then
+        local lastClaimTimeReward = 0
+        claimTimeRewardConnection = RunService.Heartbeat:Connect(function()
+            local now = tick()
+            if now - lastClaimTimeReward >= REWARD_CLAIM_INTERVAL then
+                lastClaimTimeReward = now
+                performClaimTimeReward()
+            end
+        end)
+        
+        Luna:Notification({
+            Title = "Auto Claim Time Reward",
+            Content = "Auto Claim Time Reward Enabled",
+        })
+    else
+        if claimTimeRewardConnection then
+            claimTimeRewardConnection:Disconnect()
+            claimTimeRewardConnection = nil
+        end
+        
+        Luna:Notification({
+            Title = "Auto Claim Time Reward",
+            Content = "Auto Claim Time Reward Disabled",
+        })
+    end
+end
+
+local function toggleAutoQuest(state)
+    autoQuestEnabled = state
+    
+    if autoQuestEnabled then
+        local lastQuest = 0
+        questConnection = RunService.Heartbeat:Connect(function()
+            local now = tick()
+            if now - lastQuest >= QUEST_INTERVAL then
+                lastQuest = now
+                performAutoQuest()
+            end
+        end)
+        
+        Luna:Notification({
+            Title = "Auto Quest",
+            Content = "Auto Quest Enabled",
+        })
+    else
+        if questConnection then
+            questConnection:Disconnect()
+            questConnection = nil
+        end
+        
+        Luna:Notification({
+            Title = "Auto Quest",
+            Content = "Auto Quest Disabled",
+        })
+    end
+end
+
+local function toggleAutoTeleport(state)
+    autoTeleportEnabled = state
+    
+    if autoTeleportEnabled then
+        local lastTeleport = 0
+        teleportConnection = RunService.Heartbeat:Connect(function()
+            local now = tick()
+            if now - lastTeleport >= TELEPORT_INTERVAL then
+                lastTeleport = now
+                pcall(teleportToRandomMonster)
+            end
+        end)
+        
+        Luna:Notification({
+            Title = "Auto Teleport",
+            Content = "Auto Teleport to Random Monster Enabled (Interval: " .. TELEPORT_INTERVAL .. "s)",
+        })
+    else
+        if teleportConnection then
+            teleportConnection:Disconnect()
+            teleportConnection = nil
+        end
+        
+        Luna:Notification({
+            Title = "Auto Teleport",
+            Content = "Auto Teleport to Random Monster Disabled",
+        })
+    end
+end
+
+local function onTeleportIntervalChanged(value)
+    local newInterval = tonumber(value)
+    if newInterval and newInterval > 0 then
+        TELEPORT_INTERVAL = newInterval
+        Luna:Notification({
+            Title = "Teleport Interval",
+            Content = "Teleport interval set to " .. newInterval .. " seconds",
+        })
+    else
+        Luna:Notification({
+            Title = "Invalid Input",
+            Content = "Please enter a positive number for the teleport interval",
+        })
+    end
+end
+
+local function onWorldSelected(Options)
+    selectedWorld = Options[1] or Options
+    print("Selected world:", selectedWorld)
+    if autoOpenEggEnabled then
+        Luna:Notification({
+            Title = "World Changed",
+            Content = "World Changed to " .. selectedWorld,
+        })
+        performEggOpen()
+    end
+end
+
+-- Create Kill Aura Toggle
+KillAuraToggle = MainTab:CreateToggle({
+    Name = "Kill Aura",
+    Description = "Enables automatic attacking of nearby monsters",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleKillAura(state)
+    end
+}, "KillAuraToggle")
+
+-- Create Auto Rank Up Toggle
+AutoRankUpToggle = MainTab:CreateToggle({
+    Name = "Auto Rank Up",
+    Description = "Automatically attempts to rank up",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleAutoRankUp(state)
+    end
+}, "AutoRankUpToggle")
+
+-- Create Auto Claim Time Reward Toggle
+AutoClaimTimeRewardToggle = MainTab:CreateToggle({
+    Name = "Auto Claim Time Reward",
+    Description = "Automatically claims time-based rewards",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleAutoClaimTimeReward(state)
+    end
+}, "AutoClaimTimeRewardToggle")
+
+-- Create Auto Quest Toggle
+AutoQuestToggle = MainTab:CreateToggle({
+    Name = "Auto Quest",
+    Description = "Automatically accepts and completes quests kinda have to have auto mob enabled and kill aura",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleAutoQuest(state)
+    end
+}, "AutoQuestToggle")
+
+-- Create Auto Teleport Toggle
+AutoTeleportToggle = MainTab:CreateToggle({
+    Name = "Auto Teleport to Monster",
+    Description = "Teleports to a random monster, make sure you enable kill aura",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleAutoTeleport(state)
+    end
+}, "AutoTeleportToggle")
+
+-- Create Teleport Interval TextBox
+TeleportIntervalTextBox = MainTab:CreateInput({
+    Name = "Teleport Interval (seconds)",
+    Description = "Set how often to teleport to mobs (e.g., 3 for every 3 seconds)",
+    CurrentText = tostring(TELEPORT_INTERVAL),
+    PlaceholderText = "Enter seconds (e.g., 3)",
+    Callback = function(value)
+        onTeleportIntervalChanged(value)
+    end
+}, "TeleportIntervalTextBox")
+
+-- Create Redeem All Codes Button
+MainTab:CreateButton({
+    Name = "Redeem All Codes",
+    Description = "Attempts to redeem all available codes",
+    Callback = function()
+        redeemAllCodes()
+    end
+})
+
+
+
+-- Create World Dropdown
+WorldDropdown = EggTab:CreateDropdown({
+    Name = "Select World to Open Egg",
+    Description = "Choose the world to open eggs",
+    Options = {
+        "Earth City", "Windmill Island", "Soul Society", "Cursed School",
+        "Slayer Village", "Solo Island", "Clover Village", "Leaf Village",
+        "Spirit Residence", "Magic Hunter City", "Titan City", "Village of Sins",
+        "Kajju Base", "Tempest Capital", "Virtual City", "Cairo",
+        "Ghoul City", "Chainsaw City", "Tokyo Empire"
+    },
+    CurrentOption = {"Earth City"},
+    MultipleOptions = false,
+    SpecialType = nil,
+    Callback = function(Options)
+        onWorldSelected(Options)
+    end
+}, "WorldDropdown")
+
+-- Create Auto Open Egg Toggle
+AutoOpenEggToggle = EggTab:CreateToggle({
+    Name = "Auto Open Egg",
+    Description = "Automatically opens eggs in the selected world",
+    CurrentValue = false,
+    Callback = function(state)
+        toggleAutoOpenEgg(state)
+    end
+}, "AutoOpenEggToggle")
+
+
+
+-- Initialize
+Luna:Notification({
+    Title = "Chase  sdd Hub Loaded",
+    Content = "Kill Aura, Time Reward, Quest, and Teleport Features Loaded",
+})
