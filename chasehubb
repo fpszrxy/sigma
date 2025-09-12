@@ -1,0 +1,138 @@
+-- File: Sigma Loader (No Rayfield).lua
+-- Purpose: Always run sigmaster, then detect current game title and load the matching script.
+-- Safety: No UI libs, no webhooks, no data exfiltration. Minimal console feedback via 'print/warn'.
+
+-- =========================
+-- Helpers
+-- =========================
+local function httpget(url)
+    return game:HttpGet(url)
+end
+
+local function run_remote(url, label)
+    local ok, err = pcall(function()
+        return loadstring(httpget(url))()
+    end)
+    if ok then
+        print(("[Loader] Loaded: %s"):format(label or url))
+    else
+        warn(("[Loader] Failed: %s -> %s"):format(label or url, tostring(err)))
+    end
+end
+
+-- =========================
+-- Discord Notification
+-- =========================
+local function show_discord_notification()
+    local discord_url = "https://discord.gg/PAy8Ht3SDC"
+    
+    -- Try to copy to clipboard
+    pcall(function()
+        setclipboard(discord_url)
+    end)
+    
+    -- Show notification
+    warn("[Sigma] Discord link copied to clipboard! Join our community: " .. discord_url)
+    print("==============================================")
+    print("Sigma Discord: " .. discord_url)
+    print("==============================================")
+    print("Link has been copied to your clipboard!")
+    print("Join for updates, support, and more scripts!")
+    print("==============================================")
+end
+
+-- Show Discord notification first
+show_discord_notification()
+
+-- =========================
+-- Always run base script (sigmaster)
+-- =========================
+run_remote("https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/sigmaster", "sigmaster")
+
+-- =========================
+-- Game detection by title (MarketplaceService)
+-- =========================
+local MarketplaceService = game:GetService("MarketplaceService")
+local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId)
+local title = ""
+if ok and info and typeof(info.Name) == "string" then
+    title = string.lower(info.Name)
+else
+    warn("[Loader] Could not fetch game name; title-based detection may fail.")
+end
+
+-- Map of friendly names -> URLs
+local URLS = {
+    ["bladeball"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Bladeball",
+    ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsforest",
+    ["basketball legends"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
+    ["build a boat"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/babft",
+    ["steal a brainrot"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/steal%20a%20brainrot",
+    ["fish it"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/fish%20it"
+}
+
+-- Map of PlaceIds -> URLs
+local PLACEID_URLS = {
+    -- Blade Ball (main + alternate places)
+    [13772394625] = URLS["bladeball"],
+    [14525514348] = URLS["bladeball"],
+    [14732610803] = URLS["bladeball"],
+
+    -- 99 Nights
+    [126509999114328] = URLS["99 nights"],
+
+    -- Basketball Legends
+    [12355337193] = URLS["basketball legends"],
+    [14386691987] = URLS["basketball legends"],
+    
+    -- Build A Boat
+    [537413528] = URLS["build a boat"],
+    
+    -- Steal A Brainrot (multiple versions)
+    [96342491571673] = URLS["steal a brainrot"],
+    [7709344486] = URLS["steal a brainrot"],
+    
+    -- Fish It!
+    [121864768012064] = URLS["fish it"]
+}
+
+-- =========================
+-- Title-based routing
+-- =========================
+local matched = false
+if title ~= "" then
+    if title:find("blade%p*%s*ball") or title:find("bladeball") then
+        run_remote(URLS["bladeball"], "Blade Ball")
+        matched = true
+    elseif title:find("%f[%w]99%f[%W]%s*nights") or title:find("99%s*nights") or title:find("99nights") then
+        run_remote(URLS["99 nights"], "99 Nights")
+        matched = true
+    elseif title:find("basketball%s*legends") then
+        run_remote(URLS["basketball legends"], "Basketball Legends")
+        matched = true
+    elseif title:find("build%s*a%s*boat") or title:find("buildaboat") or title:find("babft") or title:find("for treasure") then
+        run_remote(URLS["build a boat"], "Build A Boat")
+        matched = true
+    elseif title:find("steal%s*a%s*brainrot") or title:find("stealabrainrot") then
+        run_remote(URLS["steal a brainrot"], "Steal A Brainrot")
+        matched = true
+    elseif title:find("fish%p*%s*it") or title:find("fishit") then
+        run_remote(URLS["fish it"], "Fish It!")
+        matched = true
+    end
+end
+
+-- =========================
+-- PlaceId fallback (only if title detection failed)
+-- =========================
+if not matched then
+    local url = PLACEID_URLS[game.PlaceId]
+    if url then
+        run_remote(url, "PlaceId=" .. tostring(game.PlaceId))
+        matched = true
+    end
+end
+
+if not matched then
+    warn("[Loader] No script configured for this experience. PlaceId=" .. tostring(game.PlaceId) .. ", Title='" .. title .. "'")
+end
