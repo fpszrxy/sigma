@@ -144,7 +144,7 @@ local TeleportIntervalTextBox
 local function triggerKillAura()
     local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     if AutoFarm and Character and Character:FindFirstChild("HumanoidRootPart") then
-        local Closest, ClosestMag = nil, 30
+        local Closest, ClosestMag = nil, 40
         for _,Enemy in workspace.Debris.Monsters:GetChildren() do
             if Enemy:FindFirstChild("HumanoidRootPart")
             and Enemy:GetAttribute("Health")
