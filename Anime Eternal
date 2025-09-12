@@ -1,8 +1,8 @@
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
 -- Luna Interface Suite Setup
 local Luna = loadstring(game:HttpGet("https://raw.githubusercontent.com/Nebula-Softworks/Luna-Interface-Suite/refs/heads/master/source.lua", true))()
@@ -130,6 +130,7 @@ local questConnection = nil
 local teleportConnection = nil
 local Event = game:GetService("ReplicatedStorage").Events.To_Server
 local selectedWorld = "Earth City"
+local AutoFarm = false
 
 local KillAuraToggle
 local AutoRankUpToggle
@@ -141,57 +142,24 @@ local WorldDropdown
 local TeleportIntervalTextBox
 
 local function triggerKillAura()
-    local Character = LocalPlayer.Character
-    if not Character or not Character:IsDescendantOf(Workspace) then
-        return
-    end
-    
-    local HumanoidRootPart = Character:FindFirstChild("HumanoidRootPart")
-    if not HumanoidRootPart then
-        return
-    end
-    
-    local possibleMonsterFolders = {
-        Workspace:FindFirstChild("Debris"),
-        Workspace:FindFirstChild("Monsters"),
-        Workspace
-    }
-    
-    local MonstersFolder
-    for _, folder in ipairs(possibleMonsterFolders) do
-        if folder and folder:FindFirstChild("Monsters") then
-            MonstersFolder = folder:FindFirstChild("Monsters")
-            break
-        end
-    end
-    
-    if not MonstersFolder then
-        for _, obj in ipairs(Workspace:GetChildren()) do
-            if obj:IsA("Model") and obj:FindFirstChild("HumanoidRootPart") and (obj.Name:lower():find("monster") or obj.Name:lower():find("mob") or obj.Name:lower():find("enemy")) then
-                local distance = (HumanoidRootPart.Position - obj.HumanoidRootPart.Position).Magnitude
-                if distance <= AURA_RADIUS then
-                    Event:FireServer({
-                        Id = obj.Name,
-                        Action = "_Mouse_Click"
-                    })
+    local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    if AutoFarm and Character and Character:FindFirstChild("HumanoidRootPart") then
+        local Closest, ClosestMag = nil, 30
+        for _,Enemy in workspace.Debris.Monsters:GetChildren() do
+            if Enemy:FindFirstChild("HumanoidRootPart")
+            and Enemy:GetAttribute("Health")
+            and Enemy:FindFirstChild("Humanoid") then
+                local mag = (Character.HumanoidRootPart.Position - Enemy.HumanoidRootPart.Position).Magnitude
+                if mag < ClosestMag then
+                    ClosestMag = mag
+                    Closest = Enemy
                 end
             end
         end
-        return
-    end
-    
-    for _, monster in ipairs(MonstersFolder:GetChildren()) do
-        if monster:IsA("Model") then
-            local monsterRootPart = monster:FindFirstChild("HumanoidRootPart")
-            if monsterRootPart then
-                local distance = (HumanoidRootPart.Position - monsterRootPart.Position).Magnitude
-                if distance <= AURA_RADIUS then
-                    Event:FireServer({
-                        Id = monster.Name,
-                        Action = "_Mouse_Click"
-                    })
-                end
-            end
+        if Closest then
+            Event:FireServer({Id = Closest.Name, Action = "_Mouse_Click"})
+        else
+            Event:FireServer({Action = "_Mouse_Click"})
         end
     end
 end
@@ -396,6 +364,7 @@ end
 
 local function toggleKillAura(state)
     killAuraEnabled = state
+    AutoFarm = state
     
     if killAuraEnabled then
         killAuraConnection = RunService.Heartbeat:Connect(function()
