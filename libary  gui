@@ -425,7 +425,7 @@ function Library.SendNotification(settings)
     Body.TextColor3 = Color3.fromRGB(180, 180, 180)
     Body.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
     Body.TextSize = 12
-    Body.Size = UDim2.new(1, -10, 0, 30)  -- Width is 1 (100% of parent width), height is fixed initially
+    Body.Size = UDim2.new(1, -10, 0, 30)  -- Width = 1 (100% of parent width), height = fixed initially
     Body.Position = UDim2.new(0, 5, 0, 25)
     Body.BackgroundTransparency = 1
     Body.TextXAlignment = Enum.TextXAlignment.Left
@@ -532,8 +532,8 @@ function Library:create_ui()
     Container.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Container.AnchorPoint = Vector2.new(0.5, 0.5)
     Container.Name = 'Container'
-    Container.BackgroundTransparency = 0.05000000074505806
-    Container.BackgroundColor3 = Color3.fromRGB(12, 13, 15)
+    Container.BackgroundTransparency = 0.7  -- make background more transparent
+    Container.BackgroundColor3 = Color3.fromRGB(200, 180, 255)  -- light purple background
     Container.Position = UDim2.new(0.5, 0, 0.5, 0)
     Container.Size = UDim2.new(0, 0, 0, 0)
     Container.Active = true
@@ -1537,7 +1537,6 @@ function Library:create_ui()
                 Label.BackgroundTransparency = 1
                 Label.TextXAlignment = Enum.TextXAlignment.Left
                 Label.BorderSizePixel = 0
-                Label.Parent = Options
                 Label.TextSize = 10;
                 Label.LayoutOrder = LayoutOrderModule
             
@@ -2624,10 +2623,10 @@ function Library:create_ui()
                 return FeatureContainer
             end                    
 
-            return ModuleManager
+            return TabManager
         end
 
-        return TabManager
+        return ModuleManager
     end
 
     Connections['library_visiblity'] = UserInputService.InputBegan:Connect(function(input: InputObject, process: boolean)
