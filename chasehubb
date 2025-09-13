@@ -1,6 +1,6 @@
 -- File: Sigma Loader (No Rayfield).lua
 -- Purpose: Always run sigmaster, then detect current game title and load the matching script.
--- Safety: No UI libs, no webhooks, no data exfiltration. Minimal console feedback via 'print/warn'.
+-- Safety: No UI libs, no webhooks, no data exfiltration.
 
 -- =========================
 -- Helpers
@@ -13,35 +13,16 @@ local function run_remote(url, label)
     local ok, err = pcall(function()
         return loadstring(httpget(url))()
     end)
-    if ok then
-        print(("[Loader] Loaded: %s"):format(label or url))
-    else
-        warn(("[Loader] Failed: %s -> %s"):format(label or url, tostring(err)))
-    end
 end
 
 -- =========================
 -- Discord Notification
 -- =========================
 local function show_discord_notification()
-    local discord_url = "https://discord.gg/PAy8Ht3SDC"
-    
-    -- Try to copy to clipboard
-    pcall(function()
-        setclipboard(discord_url)
-    end)
-    
-    -- Show notification
-    warn("[Sigma] Discord link copied to clipboard! Join our community: " .. discord_url)
-    print("==============================================")
-    print("Sigma Discord: " .. discord_url)
-    print("==============================================")
-    print("Link has been copied to your clipboard!")
-    print("Join for updates, support, and more scripts!")
-    print("==============================================")
+    -- Discord link is handled by the button in the loading screen
 end
 
--- Show Discord notification first
+-- Show Discord notification first (placeholder)
 show_discord_notification()
 
 -- =========================
@@ -57,8 +38,6 @@ local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, ga
 local title = ""
 if ok and info and typeof(info.Name) == "string" then
     title = string.lower(info.Name)
-else
-    warn("[Loader] Could not fetch game name; title-based detection may fail.")
 end
 
 -- Map of friendly names -> URLs
@@ -108,11 +87,12 @@ local function show_loading_screen()
     local gui = Instance.new("ScreenGui")
     gui.Name = "LoadingScreenGui"
     gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true -- Ignore Roblox topbar for full coverage
     gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 100)
-    frame.Position = UDim2.new(0.5, -150, 0.5, -50)
+    frame.Size = UDim2.new(1, 0, 1, 0) -- Full screen
+    frame.Position = UDim2.new(0, 0, 0, 0) -- Top-left corner
     frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
     frame.BackgroundTransparency = 0.3
     frame.BorderSizePixel = 0
@@ -123,14 +103,65 @@ local function show_loading_screen()
     corner.Parent = frame
 
     local text = Instance.new("TextLabel")
-    text.Size = UDim2.new(1, 0, 1, 0)
-    text.Position = UDim2.new(0, 0, 0, 0)
+    text.Size = UDim2.new(1, -80, 0.7, -80) -- Adjusted height for timer
+    text.Position = UDim2.new(0, 40, 0, 40) -- Centered with padding
     text.BackgroundTransparency = 1
-    text.Text = "Loading..."
+    text.Text = " Thank you for choosing ChaseSdd Hub!\nClick below to copy our Discord link and enjoy!"
     text.TextColor3 = Color3.fromRGB(255, 255, 255)
     text.TextScaled = true
+    text.TextWrapped = true -- Allow text wrapping for long message
     text.Font = Enum.Font.SourceSansBold
+    text.TextXAlignment = Enum.TextXAlignment.Center
+    text.TextYAlignment = Enum.TextYAlignment.Center
     text.Parent = frame
+
+    -- Countdown timer
+    local timer_text = Instance.new("TextLabel")
+    timer_text.Size = UDim2.new(1, -80, 0.1, 0) -- Small height for timer
+    timer_text.Position = UDim2.new(0, 40, 0.7, -40) -- Below main text
+    timer_text.BackgroundTransparency = 1
+    timer_text.Text = "8 seconds until script loads..."
+    timer_text.TextColor3 = Color3.fromRGB(255, 255, 255)
+    timer_text.TextScaled = true
+    timer_text.TextWrapped = true
+    timer_text.Font = Enum.Font.SourceSansBold
+    timer_text.TextXAlignment = Enum.TextXAlignment.Center
+    timer_text.TextYAlignment = Enum.TextYAlignment.Center
+    timer_text.Parent = frame
+
+    -- Discord button
+    local discord_button = Instance.new("TextButton")
+    discord_button.Size = UDim2.new(0, 300, 0, 80) -- Larger for 4K displays
+    discord_button.Position = UDim2.new(0.5, -150, 0.85, -40) -- Centered below timer
+    discord_button.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+    discord_button.Text = "Copy Discord Link"
+    discord_button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    discord_button.TextScaled = true
+    discord_button.Font = Enum.Font.SourceSansSemibold
+    discord_button.Parent = frame
+
+    -- Discord button corner
+    local discord_corner = Instance.new("UICorner")
+    discord_corner.CornerRadius = UDim.new(0, 8) -- Slightly larger for 4K
+    discord_corner.Parent = discord_button
+
+    -- Discord button functionality
+    discord_button.MouseButton1Click:Connect(function()
+        local discord_url = "https://discord.gg/PAy8Ht3SDC"
+        pcall(function()
+            setclipboard(discord_url)
+            game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(0) -- Briefly show topbar for feedback
+            task.wait(0.5)
+            game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(1)
+        end)
+    end)
+
+    -- Countdown logic
+    for i = 8, 1, -1 do
+        timer_text.Text = tostring(i) .. " second" .. (i == 1 and "" or "s") .. " until script loads..."
+        task.wait(1)
+    end
+    gui:Destroy()
 
     return gui
 end
@@ -205,7 +236,7 @@ local function create_not_supported_gui()
         pcall(function()
             setclipboard(discord_url)
             game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(0) -- Briefly show topbar for feedback
-            wait(0.5)
+            task.wait(0.5)
             game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(1)
         end)
     end)
@@ -273,45 +304,31 @@ local matched = false
 if title ~= "" then
     if title:find("blade%p*%s*ball") or title:find("bladeball") then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(URLS["bladeball"], "Blade Ball")
-        loading_gui:Destroy()
         matched = true
     elseif title:find("%f[%w]99%f[%W]%s*nights") or title:find("99%s*nights") or title:find("99nights") then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(URLS["99 nights"], "99 Nights")
-        loading_gui:Destroy()
         matched = true
     elseif title:find("basketball%s*legends") then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(URLS["basketball legends"], "Basketball Legends")
-        loading_gui:Destroy()
         matched = true
     elseif title:find("build%s*a%s*boat") or title:find("buildaboat") or title:find("babft") or title:find("for treasure") then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(URLS["build a boat"], "Build A Boat")
-        loading_gui:Destroy()
         matched = true
     elseif title:find("steal%s*a%s*brainrot") or title:find("stealabrainrot") then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(URLS["steal a brainrot"], "Steal A Brainrot")
-        loading_gui:Destroy()
         matched = true
     elseif title:find("fish%p*%s*it") or title:find("fishit") then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(URLS["fish it"], "Fish It!")
-        loading_gui:Destroy()
         matched = true
     elseif title:find("anime%s*eternal") or title:find("animeeternal") then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(URLS["anime eternal"], "Anime Eternal")
-        loading_gui:Destroy()
         matched = true
     end
 end
@@ -323,9 +340,7 @@ if not matched then
     local url = PLACEID_URLS[game.PlaceId]
     if url then
         local loading_gui = show_loading_screen()
-        wait(2) -- Display loading screen for 2 seconds
         run_remote(url, "PlaceId=" .. tostring(game.PlaceId))
-        loading_gui:Destroy()
         matched = true
     end
 end
@@ -334,6 +349,5 @@ end
 -- Show GUI if no script matched
 -- =========================
 if not matched then
-    warn("[Loader] No script configured for this experience. PlaceId=" .. tostring(game.PlaceId) .. ", Title='" .. title .. "'")
     create_not_supported_gui()
 end
