@@ -437,11 +437,11 @@ function Auto_Parry.Parry(Parry_Type)
         return false
     end
 
-    Parries += 1
+    Parries = Parries + 1
 
     task.delay(0.5, function()
         if Parries > 0 then
-            Parries -= 1
+            Parries = Parries - 1
         end
     end)
 end
@@ -1892,7 +1892,7 @@ local sound_assets = {
     TeamfortressBonk = 'rbxassetid://8255306220',
     TeamfortressBell = 'rbxassetid://2868331684',
     Creamy = 'rbxassetid://102326956346715',
-    Rustheadshot = 'rbxassetid://5043539486'
+    Rustheadshot = 'rbxassetid://5043539486',
     Custom = 'empty'
 }
 local SlashesNet = ReplicatedStorage:WaitForChild("Packages")._Index:FindFirstChild("sleitnick_net@0.1.0")
