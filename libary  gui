@@ -532,8 +532,8 @@ function Library:create_ui()
     Container.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Container.AnchorPoint = Vector2.new(0.5, 0.5)
     Container.Name = 'Container'
-    Container.BackgroundTransparency = 0.7  -- make background more transparent
-    Container.BackgroundColor3 = Color3.fromRGB(200, 180, 255)  -- light purple background
+    Container.BackgroundTransparency = 0.05000000074505806
+    Container.BackgroundColor3 = Color3.fromRGB(48, 25, 51)  -- updated to purple background
     Container.Position = UDim2.new(0.5, 0, 0.5, 0)
     Container.Size = UDim2.new(0, 0, 0, 0)
     Container.Active = true
@@ -1537,6 +1537,7 @@ function Library:create_ui()
                 Label.BackgroundTransparency = 1
                 Label.TextXAlignment = Enum.TextXAlignment.Left
                 Label.BorderSizePixel = 0
+                Label.Parent = Options
                 Label.TextSize = 10;
                 Label.LayoutOrder = LayoutOrderModule
             
@@ -1679,7 +1680,7 @@ function Library:create_ui()
             
                 local FillCorner = Instance.new("UICorner")
                 FillCorner.CornerRadius = UDim.new(0, 3)
-                FillCorner.Parent = Fill
+                               FillCorner.Parent = Fill
             
                 function CheckboxManager:change_state(state: boolean)
                     self._state = state
@@ -2470,7 +2471,7 @@ function Library:create_ui()
                 UIListLayout.Parent = FeatureContainer
             
                 local FeatureButton = Instance.new("TextButton")
-                FeatureButton.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal);
+                FeatureButton.FontFace = Font.new('rbxasset://fonts/families/SourceSansPro.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal);
                 FeatureButton.TextSize = 11;
                 FeatureButton.Size = UDim2.new(1, -35, 0, 16)
                 FeatureButton.BackgroundColor3 = Color3.fromRGB(32, 38, 51)
@@ -2623,10 +2624,10 @@ function Library:create_ui()
                 return FeatureContainer
             end                    
 
-            return TabManager
+            return ModuleManager
         end
 
-        return ModuleManager
+        return TabManager
     end
 
     Connections['library_visiblity'] = UserInputService.InputBegan:Connect(function(input: InputObject, process: boolean)
