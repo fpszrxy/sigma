@@ -1891,6 +1891,8 @@ local sound_assets = {
     MinecraftHit2 = 'rbxassetid://8458185621',
     TeamfortressBonk = 'rbxassetid://8255306220',
     TeamfortressBell = 'rbxassetid://2868331684',
+    Creamy = 'rbxassetid://102326956346715',
+    Rustheadshot = 'rbxassetid://5043539486'
     Custom = 'empty'
 }
 local SlashesNet = ReplicatedStorage:WaitForChild("Packages")._Index:FindFirstChild("sleitnick_net@0.1.0")
@@ -1948,7 +1950,7 @@ end
 HitsoundModule:create_dropdown({
     title = "Sound Type",
     flag = "sound_effects",
-    options = {"Disabled", "DC_15X", "Minecraft", "MinecraftHit2", "Neverlose", "TeamfortressBonk", "TeamfortressBell"},
+    options = {"Disabled", "DC_15X", "Minecraft", "MinecraftHit2", "Neverlose", "TeamfortressBonk", "TeamfortressBell" , "Creamy", "Rustheadshot", "Custom"},
     maximum_options = 14,
     multi_dropdown = false,
     callback = function(Option) sound_effect_type = Option end
