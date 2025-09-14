@@ -1,9 +1,7 @@
--- File: Sigma Loader (No Rayfield).lua
--- Purpose: Always run sigmaster, then detect current game title and load the matching script.
--- Safety: No UI libs, no webhooks, no data exfiltration.
-
--- =========================
+---@diagnostic disable: undefined-global
 -- Helpers
+local task = task
+local Enum = Enum
 -- =========================
 local function httpget(url)
     return game:HttpGet(url)
@@ -80,182 +78,551 @@ local PLACEID_URLS = {
 }
 
 -- =========================
--- Loading Screen Function
+-- Clean up existing GUIs
 -- =========================
-local function show_loading_screen()
+local function cleanup_old_guis()
+    local CoreGui = game:GetService("CoreGui")
+    for _, gui in ipairs(CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and (gui.Name == "PremiumLoadingGui" or gui.Name == "NotSupportedGui") then
+            gui:Destroy()
+        end
+    end
+end
+
+-- =========================
+-- Premium Loading Screen Function
+-- =========================
+local function show_premium_loading()
     local Players = game:GetService("Players")
+    local TweenService = game:GetService("TweenService")
+    local RunService = game:GetService("RunService")
+    local CoreGui = game:GetService("CoreGui")
+    local UserInputService = game:GetService("UserInputService")
+    
+    -- Clean up any existing GUIs
+    cleanup_old_guis()
+    
+    -- Create the GUI - place it in CoreGui to ensure it's on top
     local gui = Instance.new("ScreenGui")
-    gui.Name = "LoadingScreenGui"
+    -- Define theme colors
+    local accentColor = Color3.fromRGB(75, 198, 89) -- vibrant green
+    local darkBgColor = Color3.fromRGB(20, 50, 20) -- dark green background
+
+    gui.Name = "PremiumLoadingGui"
     gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true -- Ignore Roblox topbar for full coverage
-    gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 10000
+    gui.Parent = CoreGui
 
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 1, 0) -- Full screen
-    frame.Position = UDim2.new(0, 0, 0, 0) -- Top-left corner
-    frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    frame.BackgroundTransparency = 0.3
-    frame.BorderSizePixel = 0
-    frame.Parent = gui
+    -- Semi-transparent overlay covering entire screen
+    local overlay = Instance.new("Frame")
+    overlay.Size = UDim2.new(1, 0, 1, 0)
+    overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    overlay.BackgroundTransparency = 0.6
+    overlay.BorderSizePixel = 0
+    overlay.ZIndex = 5
+    overlay.Parent = gui
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = frame
+    -- Gradient background covering entire screen (green tint)
+    local background = Instance.new("Frame")
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    local gradient = Instance.new("UIGradient")
+    -- Gradient hint of green to black
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, darkBgColor),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+    }
+    gradient.Rotation = 90
+    gradient.Parent = background
+    background.BorderSizePixel = 0
+    background.ZIndex = 6
+    background.Parent = gui
 
-    local text = Instance.new("TextLabel")
-    text.Size = UDim2.new(1, -80, 0.7, -80) -- Adjusted height for timer
-    text.Position = UDim2.new(0, 40, 0, 40) -- Centered with padding
-    text.BackgroundTransparency = 1
-    text.Text = " Thank you for choosing ChaseSdd Hub!\nClick below to copy our Discord link and enjoy!"
-    text.TextColor3 = Color3.fromRGB(255, 255, 255)
-    text.TextScaled = true
-    text.TextWrapped = true -- Allow text wrapping for long message
-    text.Font = Enum.Font.SourceSansBold
-    text.TextXAlignment = Enum.TextXAlignment.Center
-    text.TextYAlignment = Enum.TextYAlignment.Center
-    text.Parent = frame
+    -- Particle effects (server icon circles)
+    local function createParticle()
+        local particle = Instance.new("Frame")
+        particle.Size = UDim2.new(0, 20, 0, 20)
+        particle.BackgroundColor3 = accentColor
+        particle.BackgroundTransparency = 0.5
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = particle
+        particle.Position = UDim2.new(math.random(), 0, math.random(), 0)
+        particle.ZIndex = 7
+        particle.Parent = background
+        local tween = TweenService:Create(particle, TweenInfo.new(2, Enum.EasingStyle.Linear), {Position = UDim2.new(particle.Position.X.Scale, 0, -0.1, 0), BackgroundTransparency = 1})
+        tween:Play()
+        tween.Completed:Connect(function() particle:Destroy() end)
+    end
+    task.spawn(function()
+        while background.Parent do
+            createParticle()
+            task.wait(0.2)
+        end
+    end)
 
-    -- Countdown timer
-    local timer_text = Instance.new("TextLabel")
-    timer_text.Size = UDim2.new(1, -80, 0.1, 0) -- Small height for timer
-    timer_text.Position = UDim2.new(0, 40, 0.7, -40) -- Below main text
-    timer_text.BackgroundTransparency = 1
-    timer_text.Text = "8 seconds until script loads..."
-    timer_text.TextColor3 = Color3.fromRGB(255, 255, 255)
-    timer_text.TextScaled = true
-    timer_text.TextWrapped = true
-    timer_text.Font = Enum.Font.SourceSansBold
-    timer_text.TextXAlignment = Enum.TextXAlignment.Center
-    timer_text.TextYAlignment = Enum.TextYAlignment.Center
-    timer_text.Parent = frame
+    -- Loading container with shadow and floating animation
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0, 350, 0, 220)
+    container.Position = UDim2.new(0.5, -175, 0.5, -110)
+    container.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    container.BorderSizePixel = 0
+    container.ZIndex = 10
+    local containerCorner = Instance.new("UICorner")
+    containerCorner.CornerRadius = UDim.new(0, 12)
+    containerCorner.Parent = container
+    container.Parent = gui
 
-    -- Discord button
+    -- Add green stroke
+    local containerStroke = Instance.new("UIStroke")
+    containerStroke.Color = accentColor
+    containerStroke.Thickness = 2
+    containerStroke.Parent = container
+
+    -- Floating animation for container
+    local floatOffset = 0
+    RunService.RenderStepped:Connect(function(delta)
+        floatOffset = floatOffset + delta
+        container.Position = UDim2.new(0.5, -175, 0.5, -110 + math.sin(floatOffset * 0.5) * 5)
+    end)
+
+    -- Premium badge with pulsing animation
+    local PremiumBadge = Instance.new("TextLabel")
+    PremiumBadge.Size = UDim2.new(0, UserInputService.MouseEnabled and 150 or 120, 0, UserInputService.MouseEnabled and 35 or 28)
+    PremiumBadge.Position = UDim2.new(0.5, -PremiumBadge.Size.X.Offset / 2, 0, 10)
+    PremiumBadge.BackgroundColor3 = darkBgColor
+    PremiumBadge.BorderColor3 = accentColor
+    PremiumBadge.BorderSizePixel = 0
+    PremiumBadge.Text = "Freemium"
+    PremiumBadge.TextColor3 = Color3.fromRGB(75, 198, 89) -- green color
+    PremiumBadge.TextScaled = true
+    PremiumBadge.Font = Enum.Font.GothamBold
+    PremiumBadge.ZIndex = 11
+    local badgeCorner = Instance.new("UICorner")
+    badgeCorner.CornerRadius = UDim.new(0, 6)
+    badgeCorner.Parent = PremiumBadge
+    local glow = Instance.new("UIStroke")
+    glow.Thickness = 2
+    glow.Color = Color3.fromRGB(75, 198, 89) -- matching green
+    glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    glow.Parent = PremiumBadge
+    PremiumBadge.Parent = container
+
+    -- Pulsing animation for badge
+    task.spawn(function()
+        while PremiumBadge.Parent do
+            TweenService:Create(PremiumBadge, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0.2}):Play()
+            task.wait(0.5)
+            TweenService:Create(PremiumBadge, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0}):Play()
+            task.wait(0.5)
+        end
+    end)
+
+    -- Loading text (white)
+    local loadingText = Instance.new("TextLabel")
+    loadingText.Size = UDim2.new(1, -20, 0, 40)
+    loadingText.Position = UDim2.new(0, 10, 0, 45)
+    loadingText.BackgroundTransparency = 1
+    loadingText.Text = "Loading ChaseSddHub"
+    loadingText.TextColor3 = Color3.fromRGB(200, 200, 255)
+    loadingText.TextScaled = true
+    loadingText.Font = Enum.Font.Gotham
+    loadingText.BorderSizePixel = 0
+    loadingText.ZIndex = 11
+    loadingText.Parent = container
+
+    -- Animated dots
+    local function animate_dots()
+        local dots = {".", "..", "..."}
+        local index = 1
+        while loadingText.Parent do
+            loadingText.Text = "Loading ChaseSddHub" .. dots[index]
+            index = index % 3 + 1
+            task.wait(0.5)
+        end
+    end
+    task.spawn(animate_dots)
+
+    -- Did You Know facts (displayed on sides)
+    local facts = {
+        "Did you know Premium only costs $10!",
+        "Did you know we support " .. (info.Name or "this game") .. "!",
+        "Did you know our Discord has exclusive updates!",
+        "Did you know ChaseSdd Hub is free to use!",
+        "Did you know we add new games weekly!"
+    }
+    local factLeft = Instance.new("TextLabel")
+    factLeft.Size = UDim2.new(0, 200, 0, 50)
+    factLeft.Position = UDim2.new(0, 50, 0.5, -25)
+    factLeft.BackgroundTransparency = 1
+    factLeft.Text = facts[1]
+    factLeft.TextColor3 = accentColor
+    factLeft.TextScaled = true
+    factLeft.TextWrapped = true
+    factLeft.Font = Enum.Font.Gotham
+    factLeft.BorderSizePixel = 0
+    factLeft.ZIndex = 11
+    factLeft.Parent = gui
+
+    local factRight = Instance.new("TextLabel")
+    factRight.Size = UDim2.new(0, 200, 0, 50)
+    factRight.Position = UDim2.new(1, -250, 0.5, -25)
+    factRight.BackgroundTransparency = 1
+    factRight.Text = ""
+    factRight.TextColor3 = accentColor
+    factRight.TextScaled = true
+    factRight.TextWrapped = true
+    factRight.Font = Enum.Font.Gotham
+    factRight.BorderSizePixel = 0
+    factRight.ZIndex = 11
+    factRight.Parent = gui
+
+    -- Animate facts with floating effect on sides
+    local function animate_facts()
+        local index = 1
+        local isLeft = true
+        while factLeft.Parent and factRight.Parent do
+            local currentFact = facts[index]
+            local targetFact = factLeft
+            if not isLeft then
+                targetFact = factRight
+            end
+
+            -- Reset properties
+            targetFact.TextTransparency = 1
+            targetFact.Text = currentFact
+            targetFact.Position = UDim2.new(targetFact.Position.X.Scale, targetFact.Position.X.Offset, 0.5, -25)
+
+            -- Pop-in animation (fade in)
+            local popInTween = TweenService:Create(targetFact, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                TextTransparency = 0
+            })
+            popInTween:Play()
+            popInTween.Completed:Wait()
+
+            -- Float away animation (move up and fade out)
+            local floatAwayTween = TweenService:Create(targetFact, TweenInfo.new(2, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(targetFact.Position.X.Scale, targetFact.Position.X.Offset, 0.5, -125),
+                TextTransparency = 1
+            })
+            floatAwayTween:Play()
+            floatAwayTween.Completed:Wait()
+
+            index = index % #facts + 1
+            isLeft = not isLeft
+            task.wait(0.5)
+        end
+    end
+    task.spawn(animate_facts)
+
+    -- Animated progress bar (black with purple fill)
+    local progressBar = Instance.new("Frame")
+    progressBar.Size = UDim2.new(0, 310, 0, 8)
+    progressBar.Position = UDim2.new(0, 20, 0, 125)
+    progressBar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    progressBar.BorderSizePixel = 0
+    progressBar.ZIndex = 11
+    local progressBarCorner = Instance.new("UICorner")
+    progressBarCorner.CornerRadius = UDim.new(1, 0)
+    progressBarCorner.Parent = progressBar
+    progressBar.Parent = container
+
+    local progressFill = Instance.new("Frame")
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressFill.Position = UDim2.new(0, 0, 0, 0)
+    progressFill.BackgroundColor3 = accentColor
+    progressFill.BorderSizePixel = 0
+    progressFill.ZIndex = 12
+    local progressFillCorner = Instance.new("UICorner")
+    progressFillCorner.CornerRadius = UDim.new(1, 0)
+    progressFillCorner.Parent = progressFill
+    progressFill.Parent = progressBar
+
+    -- Animate the progress bar for 10 seconds
+    local tweenInfo = TweenInfo.new(10, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
+    local tween = TweenService:Create(progressFill, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)})
+    tween:Play()
+    
+    -- Auto-remove after 10 seconds
+    local destroyConnection
+    destroyConnection = RunService.Heartbeat:Connect(function()
+        if not gui or not gui.Parent then
+            if destroyConnection then
+                destroyConnection:Disconnect()
+            end
+            return
+        end
+    end)
+    
+    task.delay(10, function()
+        if gui and gui.Parent then
+            local exitTween = TweenService:Create(container, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Size = UDim2.new(0, 0, 0, 0),
+                Position = UDim2.new(0.5, 0, 0.5, 0)
+            })
+            exitTween:Play()
+            exitTween.Completed:Connect(function() gui:Destroy() end)
+        end
+        if destroyConnection then
+            destroyConnection:Disconnect()
+        end
+    end)
+
+    -- Skip loading button (top right corner)
+    local skipButton = Instance.new("TextButton")
+    skipButton.Size = UDim2.new(0, 80, 0, 25)
+    skipButton.Position = UDim2.new(1, -90, 0, 10)
+    skipButton.BackgroundColor3 = darkBgColor
+    skipButton.BorderColor3 = accentColor
+    skipButton.BorderSizePixel = 0
+    skipButton.Text = "SKIP"
+    skipButton.TextColor3 = accentColor
+    skipButton.TextScaled = true
+    skipButton.Font = Enum.Font.Gotham
+    skipButton.ZIndex = 11
+    local skipGlow = Instance.new("UIStroke")
+    skipGlow.Thickness = 2
+    skipGlow.Color = accentColor
+    skipGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    skipGlow.Parent = skipButton
+    local skipCorner = Instance.new("UICorner")
+    skipCorner.CornerRadius = UDim.new(0, 4)
+    skipCorner.Parent = skipButton
+    skipButton.Parent = container
+
+    -- Skip button hover effect
+    skipButton.MouseEnter:Connect(function()
+        TweenService:Create(skipButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = accentColor,
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+
+    skipButton.MouseLeave:Connect(function()
+        TweenService:Create(skipButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = darkBgColor,
+            TextColor3 = accentColor
+        }):Play()
+    end)
+
+    -- Skip button functionality
+    skipButton.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+
+    -- Discord button (black with purple text)
     local discord_button = Instance.new("TextButton")
-    discord_button.Size = UDim2.new(0, 300, 0, 80) -- Larger for 4K displays
-    discord_button.Position = UDim2.new(0.5, -150, 0.85, -40) -- Centered below timer
-    discord_button.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
-    discord_button.Text = "Copy Discord Link"
-    discord_button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    discord_button.Size = UDim2.new(0, 280, 0, 40)
+    discord_button.Position = UDim2.new(0.5, -140, 0, 160)
+    discord_button.BackgroundColor3 = darkBgColor
+    discord_button.BorderColor3 = accentColor
+    discord_button.BorderSizePixel = 0
+    discord_button.Text = "Join Discord"
+    discord_button.TextColor3 = accentColor
     discord_button.TextScaled = true
-    discord_button.Font = Enum.Font.SourceSansSemibold
-    discord_button.Parent = frame
-
-    -- Discord button corner
+    discord_button.Font = Enum.Font.Gotham
+    discord_button.ZIndex = 11
+    local discordGlow = Instance.new("UIStroke")
+    discordGlow.Thickness = 2
+    discordGlow.Color = accentColor
+    discordGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    discordGlow.Parent = discord_button
     local discord_corner = Instance.new("UICorner")
-    discord_corner.CornerRadius = UDim.new(0, 8) -- Slightly larger for 4K
+    discord_corner.CornerRadius = UDim.new(0, 8)
     discord_corner.Parent = discord_button
+    discord_button.Parent = container
+
+    -- Discord button hover effect
+    discord_button.MouseEnter:Connect(function()
+        TweenService:Create(discord_button, TweenInfo.new(0.2), {
+            BackgroundColor3 = accentColor,
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+
+    discord_button.MouseLeave:Connect(function()
+        TweenService:Create(discord_button, TweenInfo.new(0.2), {
+            BackgroundColor3 = darkBgColor,
+            TextColor3 = accentColor
+        }):Play()
+    end)
 
     -- Discord button functionality
     discord_button.MouseButton1Click:Connect(function()
         local discord_url = "https://discord.gg/PAy8Ht3SDC"
         pcall(function()
             setclipboard(discord_url)
-            game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(0) -- Briefly show topbar for feedback
-            task.wait(0.5)
-            game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(1)
+            discord_button.Text = "Copied!"
+            task.wait(1)
+            discord_button.Text = "Join Discord"
         end)
     end)
 
-    -- Countdown logic
-    for i = 8, 1, -1 do
-        timer_text.Text = tostring(i) .. " second" .. (i == 1 and "" or "s") .. " until script loads..."
-        task.wait(1)
-    end
-    gui:Destroy()
+    -- Smooth entrance animation
+    container.Size = UDim2.new(0, 0, 0, 0)
+    container.Position = UDim2.new(0.5, 0, 0.5, 0)
+    local enterTween = TweenService:Create(container, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 350, 0, 220),
+        Position = UDim2.new(0.5, -175, 0.5, -110)
+    })
+    enterTween:Play()
 
     return gui
 end
 
 -- =========================
--- GUI Creation Function
+-- GUI Creation Function (Not Supported)
 -- =========================
 local function create_not_supported_gui()
     local Players = game:GetService("Players")
     local UserInputService = game:GetService("UserInputService")
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "SigmaNotSupportedGui"
-    gui.ResetOnSpawn = false
-    gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    local CoreGui = game:GetService("CoreGui")
+    local TweenService = game:GetService("TweenService")
+    
+    -- Clean up any existing GUIs
+    cleanup_old_guis()
 
-    -- Main frame
+    -- Define theme colors
+    local accentColor = Color3.fromRGB(75, 198, 89)
+    local darkBgColor = Color3.fromRGB(0, 0, 0)
+    
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "NotSupportedGui"
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 10000
+    gui.Parent = CoreGui
+
+    -- Main frame (clean dark theme)
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 300, 0, 180)
-    frame.Position = UDim2.new(0.5, -150, 0.5, -90)
-    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    frame.Size = UDim2.new(0, 400, 0, 240)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -120)
+    frame.BackgroundColor3 = darkBgColor
     frame.BorderSizePixel = 0
+    frame.ZIndex = 10
     frame.Parent = gui
 
     -- Corner rounding
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
+    corner.CornerRadius = UDim.new(0, 12)
     corner.Parent = frame
+
+    -- Header with title
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.Position = UDim2.new(0, 0, 0, 0)
+    header.BackgroundTransparency = 1
+    header.BorderSizePixel = 0
+    header.ZIndex = 11
+    header.Parent = frame
 
     -- Title text
     local title_text = Instance.new("TextLabel")
-    title_text.Size = UDim2.new(1, -20, 0, 40)
-    title_text.Position = UDim2.new(0, 10, 0, 10)
+    title_text.Size = UDim2.new(1, -60, 1, 0)
+    title_text.Position = UDim2.new(0, 20, 0, 0)
     title_text.BackgroundTransparency = 1
-    title_text.Text = "Game Not Supported"
+    title_text.Text = "GAME NOT SUPPORTED"
     title_text.TextColor3 = Color3.fromRGB(255, 255, 255)
     title_text.TextScaled = true
     title_text.TextWrapped = true
-    title_text.Font = Enum.Font.SourceSansBold
-    title_text.Parent = frame
+    title_text.Font = Enum.Font.GothamBold
+    title_text.TextXAlignment = Enum.TextXAlignment.Left
+    title_text.BorderSizePixel = 0
+    title_text.ZIndex = 12
+    title_text.Parent = header
+
+    -- Divider line
+    local divider = Instance.new("Frame")
+    divider.Size = UDim2.new(1, -30, 0, 2)
+    divider.Position = UDim2.new(0, 15, 0, 45)
+    divider.BackgroundColor3 = accentColor
+    divider.BorderSizePixel = 0
+    divider.ZIndex = 11
+    divider.Parent = frame
 
     -- Message text
+    local message_container = Instance.new("Frame")
+    message_container.Size = UDim2.new(1, -30, 0, 100)
+    message_container.Position = UDim2.new(0, 15, 0, 55)
+    message_container.BackgroundTransparency = 1
+    message_container.BorderSizePixel = 0
+    message_container.ZIndex = 11
+    message_container.Parent = frame
+
     local message_text = Instance.new("TextLabel")
-    message_text.Size = UDim2.new(1, -20, 0, 60)
-    message_text.Position = UDim2.new(0, 10, 0, 50)
+    message_text.Size = UDim2.new(1, 0, 1, 0)
+    message_text.Position = UDim2.new(0, 0, 0, 0)
     message_text.BackgroundTransparency = 1
-    message_text.Text = "Please tell us to add support in our Discord community!"
-    message_text.TextColor3 = Color3.fromRGB(200, 200, 200)
+    message_text.Text = "This game is not currently supported by ChaseSdd Hub.\n\nJoin our Discord to request support!"
+    message_text.TextColor3 = Color3.fromRGB(255, 255, 255)
     message_text.TextScaled = true
     message_text.TextWrapped = true
-    message_text.Font = Enum.Font.SourceSans
-    message_text.Parent = frame
+    message_text.Font = Enum.Font.Gotham
+    message_text.TextYAlignment = Enum.TextYAlignment.Top
+    message_text.BorderSizePixel = 0
+    message_text.ZIndex = 12
+    message_text.Parent = message_container
 
     -- Discord button
     local discord_button = Instance.new("TextButton")
-    discord_button.Size = UDim2.new(0, 120, 0, 40)
-    discord_button.Position = UDim2.new(0.5, -60, 1, -50)
-    discord_button.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+    discord_button.Size = UDim2.new(0, 220, 0, 45)
+    discord_button.Position = UDim2.new(0.5, -110, 1, -60)
     discord_button.Text = "Join Discord"
+    discord_button.BackgroundColor3 = darkBgColor
+    discord_button.BorderColor3 = accentColor
     discord_button.TextColor3 = Color3.fromRGB(255, 255, 255)
     discord_button.TextScaled = true
-    discord_button.Font = Enum.Font.SourceSansSemibold
+    discord_button.Font = Enum.Font.GothamSemibold
+    discord_button.BorderSizePixel = 0
+    discord_button.ZIndex = 11
     discord_button.Parent = frame
 
-    -- Discord button corner
     local discord_corner = Instance.new("UICorner")
-    discord_corner.CornerRadius = UDim.new(0, 4)
+    discord_corner.CornerRadius = UDim.new(0, 8)
     discord_corner.Parent = discord_button
+
+    -- Close button
+    local close_button = Instance.new("TextButton")
+    close_button.Size = UDim2.new(0, 30, 0, 30)
+    close_button.Position = UDim2.new(1, -35, 0, 5)
+    close_button.BackgroundColor3 = darkBgColor
+    close_button.BorderColor3 = accentColor
+    close_button.Text = "X"
+    close_button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    close_button.TextScaled = true
+    close_button.Font = Enum.Font.GothamBold
+    close_button.BorderSizePixel = 0
+    close_button.ZIndex = 12
+    close_button.Parent = frame
+
+    local button_corner = Instance.new("UICorner")
+    button_corner.CornerRadius = UDim.new(0, 6)
+    button_corner.Parent = close_button
+
+    -- Hover effects
+    local function setupHoverEffect(button, normalColor, hoverColor)
+        button.MouseEnter:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = hoverColor}):Play()
+        end)
+        button.MouseLeave:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = normalColor}):Play()
+        end)
+    end
+
+    setupHoverEffect(discord_button, darkBgColor, accentColor)
+    setupHoverEffect(close_button, darkBgColor, accentColor)
 
     -- Discord button functionality
     discord_button.MouseButton1Click:Connect(function()
         local discord_url = "https://discord.gg/PAy8Ht3SDC"
         pcall(function()
             setclipboard(discord_url)
-            game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(0) -- Briefly show topbar for feedback
-            task.wait(0.5)
-            game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):SetTopbarTransparency(1)
+            local originalText = discord_button.Text
+            discord_button.Text = "COPIED!"
+            task.wait(1.5)
+            discord_button.Text = originalText
         end)
     end)
-
-    -- Close button
-    local close_button = Instance.new("TextButton")
-    close_button.Size = UDim2.new(0, 30, 0, 30)
-    close_button.Position = UDim2.new(1, -40, 0, 0) -- Top-right corner
-    close_button.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-    close_button.Text = "X"
-    close_button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    close_button.TextScaled = true
-    close_button.Font = Enum.Font.SourceSansBold
-    close_button.Parent = frame
-
-    -- Close button corner
-    local button_corner = Instance.new("UICorner")
-    button_corner.CornerRadius = UDim.new(0, 4)
-    button_corner.Parent = close_button
 
     -- Close button functionality
     close_button.MouseButton1Click:Connect(function()
@@ -294,6 +661,14 @@ local function create_not_supported_gui()
         end
     end)
 
+    -- Animate appearance
+    frame.Size = UDim2.new(0, 0, 0, 0)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 400, 0, 240),
+        Position = UDim2.new(0.5, -200, 0.5, -120)
+    }):Play()
+
     return gui
 end
 
@@ -303,31 +678,31 @@ end
 local matched = false
 if title ~= "" then
     if title:find("blade%p*%s*ball") or title:find("bladeball") then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(URLS["bladeball"], "Blade Ball")
         matched = true
     elseif title:find("%f[%w]99%f[%W]%s*nights") or title:find("99%s*nights") or title:find("99nights") then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(URLS["99 nights"], "99 Nights")
         matched = true
     elseif title:find("basketball%s*legends") then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(URLS["basketball legends"], "Basketball Legends")
         matched = true
     elseif title:find("build%s*a%s*boat") or title:find("buildaboat") or title:find("babft") or title:find("for treasure") then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(URLS["build a boat"], "Build A Boat")
         matched = true
     elseif title:find("steal%s*a%s*brainrot") or title:find("stealabrainrot") then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(URLS["steal a brainrot"], "Steal A Brainrot")
         matched = true
     elseif title:find("fish%p*%s*it") or title:find("fishit") then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(URLS["fish it"], "Fish It!")
         matched = true
     elseif title:find("anime%s*eternal") or title:find("animeeternal") then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(URLS["anime eternal"], "Anime Eternal")
         matched = true
     end
@@ -339,7 +714,7 @@ end
 if not matched then
     local url = PLACEID_URLS[game.PlaceId]
     if url then
-        local loading_gui = show_loading_screen()
+        local loading_gui = show_premium_loading()
         run_remote(url, "PlaceId=" .. tostring(game.PlaceId))
         matched = true
     end
