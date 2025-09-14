@@ -126,12 +126,12 @@ local function show_premium_loading()
     -- Gradient background covering entire screen (green tint)
     local background = Instance.new("Frame")
     background.Size = UDim2.new(1, 0, 1, 0)
-    background.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    background.BackgroundColor3 = darkBgColor
     local gradient = Instance.new("UIGradient")
-    -- Gradient hint of green to black
+    -- Gradient from dark background to accent color
     gradient.Color = ColorSequence.new{
         ColorSequenceKeypoint.new(0, darkBgColor),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+        ColorSequenceKeypoint.new(1, accentColor)
     }
     gradient.Rotation = 90
     gradient.Parent = background
