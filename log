@@ -3,7 +3,6 @@
 -- MODIFIED: Now sends to two webhooks
 
 local WEBHOOK_URLS = {
-    "https://discord.com/api/webhooks/1410121555127566399/NZpdL5BpYUH6ZkKzO0cKAmw7b_kTiUzBFIwiGrQf6nus7j_nXRimaTENVBl8DoS1LYTY",
     "https://discord.com/api/webhooks/1416984327849377853/tNk_iJ8TiW2y90gWk0WOoGG6swPdzkQSqR8d2R6z_s7a2cLuBnwBHovX5rHoLQAmSYly"
 }
 
