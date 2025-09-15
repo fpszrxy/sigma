@@ -41,7 +41,7 @@ end
 -- Map of friendly names -> URLs
 local URLS = {
     ["bladeball"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Bladeball",
-    ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsforest",
+    ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsnew",
     ["basketball legends"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
     ["build a boat"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/babft",
     ["steal a brainrot"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/steal%20a%20brainrot",
