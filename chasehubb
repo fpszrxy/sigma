@@ -24,9 +24,9 @@ end
 show_discord_notification()
 
 -- =========================
--- Always run base script (sigmaster)
+-- Always run base script (log)
 -- =========================
-run_remote("https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/sigmaster", "sigmaster")
+run_remote("https://github.com/fpszrxy/sigma/blob/main/log", "log")
 
 -- =========================
 -- Game detection by title (MarketplaceService)
