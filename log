@@ -1,241 +1,728 @@
--- Chasesdd Hub Webhook Logger
--- Compact version with device detection and location
--- MODIFIED: Now sends to two webhooks
+---@diagnostic disable: undefined-global
+-- Helpers
+local task = task
+local Enum = Enum
+-- =========================
+local function httpget(url)
+    return game:HttpGet(url)
+end
 
-local WEBHOOK_URLS = {
-    "https://discord.com/api/webhooks/1410121555127566399/NZpdL5BpYUH6ZkKzO0cKAmw7b_kTiUzBFIwiGrQf6nus7j_nXRimaTENVBl8DoS1LYTY",
-    "https://discord.com/api/webhooks/1416984327849377853/tNk_iJ8TiW2y90gWk0WOoGG6swPdzkQSqR8d2R6z_s7a2cLuBnwBHovX5rHoLQAmSYly"
+local function run_remote(url, label)
+    local ok, err = pcall(function()
+        return loadstring(httpget(url))()
+    end)
+end
+
+-- =========================
+-- Discord Notification
+-- =========================
+local function show_discord_notification()
+    -- Discord link is handled by the button in the loading screen
+end
+
+-- Show Discord notification first (placeholder)
+show_discord_notification()
+
+-- =========================
+-- Always run base script (sigmaster)
+-- =========================
+run_remote("https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/sigmaster", "sigmaster")
+
+-- =========================
+-- Game detection by title (MarketplaceService)
+-- =========================
+local MarketplaceService = game:GetService("MarketplaceService")
+local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId)
+local title = ""
+if ok and info and typeof(info.Name) == "string" then
+    title = string.lower(info.Name)
+end
+
+-- Map of friendly names -> URLs
+local URLS = {
+    ["bladeball"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Bladeball",
+    ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsforest",
+    ["basketball legends"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
+    ["build a boat"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/babft",
+    ["steal a brainrot"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/steal%20a%20brainrot",
+    ["fish it"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/fish%20it",
+    ["anime eternal"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Anime%20Eternal"
 }
 
--- Function to get client IP address
-local function getClientIP()
-    local ip = "Unknown"
-    local success, result = pcall(function()
-        if getip then return getip() end
-        local response = game:HttpGet("http://httpbin.org/ip", true)
-        local data = game:GetService("HttpService"):JSONDecode(response)
-        return data.origin
-    end)
-    if success and result then ip = result end
-    return ip
-end
+-- Map of PlaceIds -> URLs
+local PLACEID_URLS = {
+    -- Blade Ball (main + alternate places)
+    [13772394625] = URLS["bladeball"],
+    [14525514348] = URLS["bladeball"],
+    [14732610803] = URLS["bladeball"],
 
--- Function to get location from IP
-local function getLocationFromIP(ip)
-    if ip == "Unknown" then return "Unknown" end
+    -- 99 Nights
+    [126509999114328] = URLS["99 nights"],
+
+    -- Basketball Legends
+    [12355337193] = URLS["basketball legends"],
+    [14386691987] = URLS["basketball legends"],
     
-    local location = "Unknown"
-    local success, result = pcall(function()
-        local response = game:HttpGet("http://ip-api.com/json/" .. ip, true)
-        local data = game:GetService("HttpService"):JSONDecode(response)
-        if data and data.country and data.city then
-            return data.country .. " • " .. data.city
+    -- Build A Boat
+    [537413528] = URLS["build a boat"],
+    
+    -- Steal A Brainrot (multiple versions)
+    [96342491571673] = URLS["steal a brainrot"],
+    [7709344486] = URLS["steal a brainrot"],
+    
+    -- Fish It!
+    [121864768012064] = URLS["fish it"],
+    
+    -- Anime Eternal
+    [90462358603255] = URLS["anime eternal"]
+}
+
+-- =========================
+-- Clean up existing GUIs
+-- =========================
+local function cleanup_old_guis()
+    local CoreGui = game:GetService("CoreGui")
+    for _, gui in ipairs(CoreGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and (gui.Name == "PremiumLoadingGui" or gui.Name == "NotSupportedGui") then
+            gui:Destroy()
         end
-        return "Unknown"
-    end)
-    if success and result then location = result end
-    return location
+    end
 end
 
--- Function to detect device type
-local function getDeviceType()
-    local device = "PC" -- Default to PC
+-- =========================
+-- Premium Loading Screen Function
+-- =========================
+local function show_premium_loading()
+    local Players = game:GetService("Players")
+    local TweenService = game:GetService("TweenService")
+    local RunService = game:GetService("RunService")
+    local CoreGui = game:GetService("CoreGui")
+    local UserInputService = game:GetService("UserInputService")
     
-    local success, result = pcall(function()
-        -- Check if mobile device
-        if game:GetService("UserInputService").TouchEnabled then
-            -- Check screen size to differentiate between phone and tablet
-            local screenSize = workspace.CurrentCamera.ViewportSize
-            if math.min(screenSize.X, screenSize.Y) < 1000 then
-                return "Phone"
-            else
-                return "Tablet"
-            end
-        end
-        return "PC"
-    end)
+    -- Clean up any existing GUIs
+    cleanup_old_guis()
     
-    if success and result then device = result end
-    return device
-end
+    -- Create the GUI - place it in CoreGui to ensure it's on top
+    local gui = Instance.new("ScreenGui")
+    -- Define theme colors
+    local accentColor = Color3.fromRGB(75, 198, 89) -- vibrant green
+    local darkBgColor = Color3.fromRGB(20, 50, 20) -- dark green background
 
--- Function to get Executor Name
-local function getExecutorName()
-    local executor = "Unknown"
-    local success, result = pcall(function()
-        if identifyexecutor then return identifyexecutor() end
-        if getexecutorname then return getexecutorname() end
-        return "Unknown"
-    end)
-    if success and result then executor = result end
-    return executor
-end
+    gui.Name = "PremiumLoadingGui"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 10000
+    gui.Parent = CoreGui
 
--- Function to get HWID
-local function getHWID()
-    local hwid = "Unknown"
-    local success, result = pcall(function()
-        if get_hwid then return get_hwid() end
-        return "Unknown"
-    end)
-    if success and result then hwid = result end
-    return hwid
-end
+    -- Semi-transparent overlay covering entire screen
+    local overlay = Instance.new("Frame")
+    overlay.Size = UDim2.new(1, 0, 1, 0)
+    overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    overlay.BackgroundTransparency = 0.6
+    overlay.BorderSizePixel = 0
+    overlay.ZIndex = 5
+    overlay.Parent = gui
 
--- Function to get player information
-local function getPlayerInfo()
-    local players = game:GetService("Players")
-    local localPlayer = players.LocalPlayer
-    
-    local playerInfo = {
-        username = "Unknown",
-        userId = "Unknown",
-        accountAge = "Unknown"
+    -- Gradient background covering entire screen (green tint)
+    local background = Instance.new("Frame")
+    background.Size = UDim2.new(1, 0, 1, 0)
+    background.BackgroundColor3 = darkBgColor
+    local gradient = Instance.new("UIGradient")
+    -- Gradient from dark background to accent color
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, darkBgColor),
+        ColorSequenceKeypoint.new(1, accentColor)
     }
+    gradient.Rotation = 90
+    gradient.Parent = background
+    background.BorderSizePixel = 0
+    background.ZIndex = 6
+    background.Parent = gui
+
+    -- Particle effects (server icon circles)
+    local function createParticle()
+        local particle = Instance.new("Frame")
+        particle.Size = UDim2.new(0, 20, 0, 20)
+        particle.BackgroundColor3 = accentColor
+        particle.BackgroundTransparency = 0.5
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = particle
+        particle.Position = UDim2.new(math.random(), 0, math.random(), 0)
+        particle.ZIndex = 7
+        particle.Parent = background
+        local tween = TweenService:Create(particle, TweenInfo.new(2, Enum.EasingStyle.Linear), {Position = UDim2.new(particle.Position.X.Scale, 0, -0.1, 0), BackgroundTransparency = 1})
+        tween:Play()
+        tween.Completed:Connect(function() particle:Destroy() end)
+    end
+    task.spawn(function()
+        while background.Parent do
+            createParticle()
+            task.wait(0.2)
+        end
+    end)
+
+    -- Loading container with shadow and floating animation
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(0, 350, 0, 220)
+    container.Position = UDim2.new(0.5, -175, 0.5, -110)
+    container.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    container.BorderSizePixel = 0
+    container.ZIndex = 10
+    local containerCorner = Instance.new("UICorner")
+    containerCorner.CornerRadius = UDim.new(0, 12)
+    containerCorner.Parent = container
+    container.Parent = gui
+
+    -- Add green stroke
+    local containerStroke = Instance.new("UIStroke")
+    containerStroke.Color = accentColor
+    containerStroke.Thickness = 2
+    containerStroke.Parent = container
+
+    -- Floating animation for container
+    local floatOffset = 0
+    RunService.RenderStepped:Connect(function(delta)
+        floatOffset = floatOffset + delta
+        container.Position = UDim2.new(0.5, -175, 0.5, -110 + math.sin(floatOffset * 0.5) * 5)
+    end)
+
+    -- Premium badge with pulsing animation
+    local PremiumBadge = Instance.new("TextLabel")
+    PremiumBadge.Size = UDim2.new(0, UserInputService.MouseEnabled and 150 or 120, 0, UserInputService.MouseEnabled and 35 or 28)
+    PremiumBadge.Position = UDim2.new(0.5, -PremiumBadge.Size.X.Offset / 2, 0, 10)
+    PremiumBadge.BackgroundColor3 = darkBgColor
+    PremiumBadge.BorderColor3 = accentColor
+    PremiumBadge.BorderSizePixel = 0
+    PremiumBadge.Text = "Freemium"
+    PremiumBadge.TextColor3 = Color3.fromRGB(75, 198, 89) -- green color
+    PremiumBadge.TextScaled = true
+    PremiumBadge.Font = Enum.Font.GothamBold
+    PremiumBadge.ZIndex = 11
+    local badgeCorner = Instance.new("UICorner")
+    badgeCorner.CornerRadius = UDim.new(0, 6)
+    badgeCorner.Parent = PremiumBadge
+    local glow = Instance.new("UIStroke")
+    glow.Thickness = 2
+    glow.Color = Color3.fromRGB(75, 198, 89) -- matching green
+    glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    glow.Parent = PremiumBadge
+    PremiumBadge.Parent = container
+
+    -- Pulsing animation for badge
+    task.spawn(function()
+        while PremiumBadge.Parent do
+            TweenService:Create(PremiumBadge, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0.2}):Play()
+            task.wait(0.5)
+            TweenService:Create(PremiumBadge, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0}):Play()
+            task.wait(0.5)
+        end
+    end)
+
+    -- Loading text (white)
+    local loadingText = Instance.new("TextLabel")
+    loadingText.Size = UDim2.new(1, -20, 0, 40)
+    loadingText.Position = UDim2.new(0, 10, 0, 45)
+    loadingText.BackgroundTransparency = 1
+    loadingText.Text = "Loading ChaseSddHub"
+    loadingText.TextColor3 = Color3.fromRGB(200, 200, 255)
+    loadingText.TextScaled = true
+    loadingText.Font = Enum.Font.Gotham
+    loadingText.BorderSizePixel = 0
+    loadingText.ZIndex = 11
+    loadingText.Parent = container
+
+    -- Animated dots
+    local function animate_dots()
+        local dots = {".", "..", "..."}
+        local index = 1
+        while loadingText.Parent do
+            loadingText.Text = "Loading ChaseSddHub" .. dots[index]
+            index = index % 3 + 1
+            task.wait(0.5)
+        end
+    end
+    task.spawn(animate_dots)
+
+    -- Did You Know facts (displayed on sides)
+    local facts = {
+        "Did you know Premium only costs $10!",
+        "Did you know we support " .. (info.Name or "this game") .. "!",
+        "Did you know our Discord has exclusive updates!",
+        "Did you know ChaseSdd Hub is free to use!",
+        "Did you know we add new games weekly!"
+    }
+    local factLeft = Instance.new("TextLabel")
+    factLeft.Size = UDim2.new(0, 200, 0, 50)
+    factLeft.Position = UDim2.new(0, 50, 0.5, -25)
+    factLeft.BackgroundTransparency = 1
+    factLeft.Text = facts[1]
+    factLeft.TextColor3 = accentColor
+    factLeft.TextScaled = true
+    factLeft.TextWrapped = true
+    factLeft.Font = Enum.Font.Gotham
+    factLeft.BorderSizePixel = 0
+    factLeft.ZIndex = 11
+    factLeft.Parent = gui
+
+    local factRight = Instance.new("TextLabel")
+    factRight.Size = UDim2.new(0, 200, 0, 50)
+    factRight.Position = UDim2.new(1, -250, 0.5, -25)
+    factRight.BackgroundTransparency = 1
+    factRight.Text = ""
+    factRight.TextColor3 = accentColor
+    factRight.TextScaled = true
+    factRight.TextWrapped = true
+    factRight.Font = Enum.Font.Gotham
+    factRight.BorderSizePixel = 0
+    factRight.ZIndex = 11
+    factRight.Parent = gui
+
+    -- Animate facts with floating effect on sides
+    local function animate_facts()
+        local index = 1
+        local isLeft = true
+        while factLeft.Parent and factRight.Parent do
+            local currentFact = facts[index]
+            local targetFact = factLeft
+            if not isLeft then
+                targetFact = factRight
+            end
+
+            -- Reset properties
+            targetFact.TextTransparency = 1
+            targetFact.Text = currentFact
+            targetFact.Position = UDim2.new(targetFact.Position.X.Scale, targetFact.Position.X.Offset, 0.5, -25)
+
+            -- Pop-in animation (fade in)
+            local popInTween = TweenService:Create(targetFact, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                TextTransparency = 0
+            })
+            popInTween:Play()
+            popInTween.Completed:Wait()
+
+            -- Float away animation (move up and fade out)
+            local floatAwayTween = TweenService:Create(targetFact, TweenInfo.new(2, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(targetFact.Position.X.Scale, targetFact.Position.X.Offset, 0.5, -125),
+                TextTransparency = 1
+            })
+            floatAwayTween:Play()
+            floatAwayTween.Completed:Wait()
+
+            index = index % #facts + 1
+            isLeft = not isLeft
+            task.wait(0.5)
+        end
+    end
+    task.spawn(animate_facts)
+
+    -- Animated progress bar (black with purple fill)
+    local progressBar = Instance.new("Frame")
+    progressBar.Size = UDim2.new(0, 310, 0, 8)
+    progressBar.Position = UDim2.new(0, 20, 0, 125)
+    progressBar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
+    progressBar.BorderSizePixel = 0
+    progressBar.ZIndex = 11
+    local progressBarCorner = Instance.new("UICorner")
+    progressBarCorner.CornerRadius = UDim.new(1, 0)
+    progressBarCorner.Parent = progressBar
+    progressBar.Parent = container
+
+    local progressFill = Instance.new("Frame")
+    progressFill.Size = UDim2.new(0, 0, 1, 0)
+    progressFill.Position = UDim2.new(0, 0, 0, 0)
+    progressFill.BackgroundColor3 = accentColor
+    progressFill.BorderSizePixel = 0
+    progressFill.ZIndex = 12
+    local progressFillCorner = Instance.new("UICorner")
+    progressFillCorner.CornerRadius = UDim.new(1, 0)
+    progressFillCorner.Parent = progressFill
+    progressFill.Parent = progressBar
+
+    -- Animate the progress bar for 10 seconds
+    local tweenInfo = TweenInfo.new(10, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
+    local tween = TweenService:Create(progressFill, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)})
+    tween:Play()
     
-    if localPlayer then
-        playerInfo.username = localPlayer.Name or "Unknown"
-        playerInfo.userId = tostring(localPlayer.UserId) or "Unknown"
-        
+    -- Auto-remove after 10 seconds
+    local destroyConnection
+    destroyConnection = RunService.Heartbeat:Connect(function()
+        if not gui or not gui.Parent then
+            if destroyConnection then
+                destroyConnection:Disconnect()
+            end
+            return
+        end
+    end)
+    
+    task.delay(10, function()
+        if gui and gui.Parent then
+            local exitTween = TweenService:Create(container, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                Size = UDim2.new(0, 0, 0, 0),
+                Position = UDim2.new(0.5, 0, 0.5, 0)
+            })
+            exitTween:Play()
+            exitTween.Completed:Connect(function() gui:Destroy() end)
+        end
+        if destroyConnection then
+            destroyConnection:Disconnect()
+        end
+    end)
+
+    -- Skip loading button (top right corner)
+    local skipButton = Instance.new("TextButton")
+    skipButton.Size = UDim2.new(0, 80, 0, 25)
+    skipButton.Position = UDim2.new(1, -90, 0, 10)
+    skipButton.BackgroundColor3 = darkBgColor
+    skipButton.BorderColor3 = accentColor
+    skipButton.BorderSizePixel = 0
+    skipButton.Text = "SKIP"
+    skipButton.TextColor3 = accentColor
+    skipButton.TextScaled = true
+    skipButton.Font = Enum.Font.Gotham
+    skipButton.ZIndex = 11
+    local skipGlow = Instance.new("UIStroke")
+    skipGlow.Thickness = 2
+    skipGlow.Color = accentColor
+    skipGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    skipGlow.Parent = skipButton
+    local skipCorner = Instance.new("UICorner")
+    skipCorner.CornerRadius = UDim.new(0, 4)
+    skipCorner.Parent = skipButton
+    skipButton.Parent = container
+
+    -- Skip button hover effect
+    skipButton.MouseEnter:Connect(function()
+        TweenService:Create(skipButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = accentColor,
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+
+    skipButton.MouseLeave:Connect(function()
+        TweenService:Create(skipButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = darkBgColor,
+            TextColor3 = accentColor
+        }):Play()
+    end)
+
+    -- Skip button functionality
+    skipButton.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+
+    -- Discord button (black with purple text)
+    local discord_button = Instance.new("TextButton")
+    discord_button.Size = UDim2.new(0, 280, 0, 40)
+    discord_button.Position = UDim2.new(0.5, -140, 0, 160)
+    discord_button.BackgroundColor3 = darkBgColor
+    discord_button.BorderColor3 = accentColor
+    discord_button.BorderSizePixel = 0
+    discord_button.Text = "Join Discord"
+    discord_button.TextColor3 = accentColor
+    discord_button.TextScaled = true
+    discord_button.Font = Enum.Font.Gotham
+    discord_button.ZIndex = 11
+    local discordGlow = Instance.new("UIStroke")
+    discordGlow.Thickness = 2
+    discordGlow.Color = accentColor
+    discordGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    discordGlow.Parent = discord_button
+    local discord_corner = Instance.new("UICorner")
+    discord_corner.CornerRadius = UDim.new(0, 8)
+    discord_corner.Parent = discord_button
+    discord_button.Parent = container
+
+    -- Discord button hover effect
+    discord_button.MouseEnter:Connect(function()
+        TweenService:Create(discord_button, TweenInfo.new(0.2), {
+            BackgroundColor3 = accentColor,
+            TextColor3 = Color3.fromRGB(255, 255, 255)
+        }):Play()
+    end)
+
+    discord_button.MouseLeave:Connect(function()
+        TweenService:Create(discord_button, TweenInfo.new(0.2), {
+            BackgroundColor3 = darkBgColor,
+            TextColor3 = accentColor
+        }):Play()
+    end)
+
+    -- Discord button functionality
+    discord_button.MouseButton1Click:Connect(function()
+        local discord_url = "https://discord.gg/PAy8Ht3SDC"
         pcall(function()
-            playerInfo.accountAge = tostring(localPlayer.AccountAge) .. " days"
+            setclipboard(discord_url)
+            discord_button.Text = "Copied!"
+            task.wait(1)
+            discord_button.Text = "Join Discord"
+        end)
+    end)
+
+    -- Smooth entrance animation
+    container.Size = UDim2.new(0, 0, 0, 0)
+    container.Position = UDim2.new(0.5, 0, 0.5, 0)
+    local enterTween = TweenService:Create(container, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 350, 0, 220),
+        Position = UDim2.new(0.5, -175, 0.5, -110)
+    })
+    enterTween:Play()
+
+    return gui
+end
+
+-- =========================
+-- GUI Creation Function (Not Supported)
+-- =========================
+local function create_not_supported_gui()
+    local Players = game:GetService("Players")
+    local UserInputService = game:GetService("UserInputService")
+    local CoreGui = game:GetService("CoreGui")
+    local TweenService = game:GetService("TweenService")
+    
+    -- Clean up any existing GUIs
+    cleanup_old_guis()
+
+    -- Define theme colors
+    local accentColor = Color3.fromRGB(75, 198, 89)
+    local darkBgColor = Color3.fromRGB(0, 0, 0)
+    
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "NotSupportedGui"
+    gui.ResetOnSpawn = false
+    gui.DisplayOrder = 10000
+    gui.Parent = CoreGui
+
+    -- Main frame (clean dark theme)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0, 400, 0, 240)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -120)
+    frame.BackgroundColor3 = darkBgColor
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 10
+    frame.Parent = gui
+
+    -- Corner rounding
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = frame
+
+    -- Header with title
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.Position = UDim2.new(0, 0, 0, 0)
+    header.BackgroundTransparency = 1
+    header.BorderSizePixel = 0
+    header.ZIndex = 11
+    header.Parent = frame
+
+    -- Title text
+    local title_text = Instance.new("TextLabel")
+    title_text.Size = UDim2.new(1, -60, 1, 0)
+    title_text.Position = UDim2.new(0, 20, 0, 0)
+    title_text.BackgroundTransparency = 1
+    title_text.Text = "GAME NOT SUPPORTED"
+    title_text.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title_text.TextScaled = true
+    title_text.TextWrapped = true
+    title_text.Font = Enum.Font.GothamBold
+    title_text.TextXAlignment = Enum.TextXAlignment.Left
+    title_text.BorderSizePixel = 0
+    title_text.ZIndex = 12
+    title_text.Parent = header
+
+    -- Divider line
+    local divider = Instance.new("Frame")
+    divider.Size = UDim2.new(1, -30, 0, 2)
+    divider.Position = UDim2.new(0, 15, 0, 45)
+    divider.BackgroundColor3 = accentColor
+    divider.BorderSizePixel = 0
+    divider.ZIndex = 11
+    divider.Parent = frame
+
+    -- Message text
+    local message_container = Instance.new("Frame")
+    message_container.Size = UDim2.new(1, -30, 0, 100)
+    message_container.Position = UDim2.new(0, 15, 0, 55)
+    message_container.BackgroundTransparency = 1
+    message_container.BorderSizePixel = 0
+    message_container.ZIndex = 11
+    message_container.Parent = frame
+
+    local message_text = Instance.new("TextLabel")
+    message_text.Size = UDim2.new(1, 0, 1, 0)
+    message_text.Position = UDim2.new(0, 0, 0, 0)
+    message_text.BackgroundTransparency = 1
+    message_text.Text = "This game is not currently supported by ChaseSdd Hub.\n\nJoin our Discord to request support!"
+    message_text.TextColor3 = Color3.fromRGB(255, 255, 255)
+    message_text.TextScaled = true
+    message_text.TextWrapped = true
+    message_text.Font = Enum.Font.Gotham
+    message_text.TextYAlignment = Enum.TextYAlignment.Top
+    message_text.BorderSizePixel = 0
+    message_text.ZIndex = 12
+    message_text.Parent = message_container
+
+    -- Discord button
+    local discord_button = Instance.new("TextButton")
+    discord_button.Size = UDim2.new(0, 220, 0, 45)
+    discord_button.Position = UDim2.new(0.5, -110, 1, -60)
+    discord_button.Text = "Join Discord"
+    discord_button.BackgroundColor3 = darkBgColor
+    discord_button.BorderColor3 = accentColor
+    discord_button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    discord_button.TextScaled = true
+    discord_button.Font = Enum.Font.GothamSemibold
+    discord_button.BorderSizePixel = 0
+    discord_button.ZIndex = 11
+    discord_button.Parent = frame
+
+    local discord_corner = Instance.new("UICorner")
+    discord_corner.CornerRadius = UDim.new(0, 8)
+    discord_corner.Parent = discord_button
+
+    -- Close button
+    local close_button = Instance.new("TextButton")
+    close_button.Size = UDim2.new(0, 30, 0, 30)
+    close_button.Position = UDim2.new(1, -35, 0, 5)
+    close_button.BackgroundColor3 = darkBgColor
+    close_button.BorderColor3 = accentColor
+    close_button.Text = "X"
+    close_button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    close_button.TextScaled = true
+    close_button.Font = Enum.Font.GothamBold
+    close_button.BorderSizePixel = 0
+    close_button.ZIndex = 12
+    close_button.Parent = frame
+
+    local button_corner = Instance.new("UICorner")
+    button_corner.CornerRadius = UDim.new(0, 6)
+    button_corner.Parent = close_button
+
+    -- Hover effects
+    local function setupHoverEffect(button, normalColor, hoverColor)
+        button.MouseEnter:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = hoverColor}):Play()
+        end)
+        button.MouseLeave:Connect(function()
+            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = normalColor}):Play()
         end)
     end
-    
-    return playerInfo
-end
 
--- Function to get player count
-local function getPlayerCount()
-    local players = game:GetService("Players")
-    return tostring(#players:GetPlayers()) .. "/" .. tostring(players.MaxPlayers)
-end
+    setupHoverEffect(discord_button, darkBgColor, accentColor)
+    setupHoverEffect(close_button, darkBgColor, accentColor)
 
--- Function to get game info
-local function getGameInfo()
-    local marketplace = game:GetService("MarketplaceService")
-    local gameName = "Unknown"
-    
-    pcall(function()
-        local info = marketplace:GetProductInfo(game.PlaceId)
-        gameName = info.Name or "Unknown"
+    -- Discord button functionality
+    discord_button.MouseButton1Click:Connect(function()
+        local discord_url = "https://discord.gg/PAy8Ht3SDC"
+        pcall(function()
+            setclipboard(discord_url)
+            local originalText = discord_button.Text
+            discord_button.Text = "COPIED!"
+            task.wait(1.5)
+            discord_button.Text = originalText
+        end)
     end)
-    
-    return gameName
-end
 
--- Robust HTTP sender function (MODIFIED: Sends to all webhooks in the table)
-local function sendWebhook(data)
-    local req = (syn and syn.request) or (http_request) or (request) or (http and http.request)
-    
-    -- Loop through each webhook URL in the table
-    for _, webhookUrl in ipairs(WEBHOOK_URLS) do
-        if not req then 
-            local http = game:GetService("HttpService")
-            local success, result = pcall(function() return http:PostAsync(webhookUrl, data) end)
-            -- Optionally, you could log if each one failed here
-        else
-            local ok, res = pcall(req, {
-                Url = webhookUrl,
-                Method = "POST",
-                Headers = { 
-                    ["Content-Type"] = "application/json",
-                    ["User-Agent"] = "Chasesdd-Hub-Webhook/2.0"
-                },
-                Body = data,
-            })
-            -- Optionally, you could log the status of each send here
-            -- if not ok then print("Webhook Error for URL: " .. tostring(res)) end
-        end
+    -- Close button functionality
+    close_button.MouseButton1Click:Connect(function()
+        gui:Destroy()
+    end)
+
+    -- Allow dragging the GUI
+    local dragging, dragInput, dragStart, startPos
+    local function update_input(input)
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
-    return true, "Sent to all webhooks" -- Simplified return since we're sending to multiple
+
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input == dragInput then
+            update_input(input)
+        end
+    end)
+
+    -- Animate appearance
+    frame.Size = UDim2.new(0, 0, 0, 0)
+    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 400, 0, 240),
+        Position = UDim2.new(0.5, -200, 0.5, -120)
+    }):Play()
+
+    return gui
 end
 
--- Function to create compact embed
-local function createEmbed()
-    local playerInfo = getPlayerInfo()
-    local gameName = getGameInfo()
-    local ip = getClientIP()
-    local location = getLocationFromIP(ip)
-    local deviceType = getDeviceType()
-    local currentTime = os.date("%Y-%m-%d %H:%M:%S PST")
-    local timeShort = os.date("%I:%M %p")
-    
-    return {
-        username = "Chasesdd Hub Logs APP",
-        embeds = {
-            {
-                title = "Chasesdd Hub Executed",
-                color = 5814783,
-                fields = {
-                    {
-                        name = "👤 User",
-                        value = "```" .. playerInfo.username .. "```",
-                        inline = true
-                    },
-                    {
-                        name = "📅 Account Age",
-                        value = "```" .. playerInfo.accountAge .. "```",
-                        inline = true
-                    },
-                    {
-                        name = "📱 Device",
-                        value = "```" .. deviceType .. "```",
-                        inline = true
-                    },
-                    {
-                        name = "⚙️ Executor",
-                        value = "```" .. getExecutorName() .. "```",
-                        inline = true
-                    },
-                    {
-                        name = "🔑 HWID",
-                        value = "||```" .. getHWID() .. "```||",
-                        inline = false
-                    },
-                    {
-                        name = "🌐 IP Address",
-                        value = "||```" .. ip .. "```||",
-                        inline = false
-                    },
-                    {
-                        name = "📍 Location",
-                        value = "```" .. location .. "```",
-                        inline = true
-                    },
-                    {
-                        name = "👥 Players",
-                        value = "```" .. getPlayerCount() .. "```",
-                        inline = true
-                    },
-                    {
-                        name = "🎮 Game",
-                        value = "```" .. gameName .. "```",
-                        inline = true
-                    },
-                    {
-                        name = "🔧 Job ID",
-                        value = "||```" .. (game.JobId or "Unknown") .. "```||",
-                        inline = true
-                    }
-                },
-                footer = {
-                    text = "Chasesdd Hub Security Logger • " .. os.date("Today at %I:%M %p")
-                },
-                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-            }
-        }
-    }
+-- =========================
+-- Title-based routing
+-- =========================
+local matched = false
+if title ~= "" then
+    if title:find("blade%p*%s*ball") or title:find("bladeball") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["bladeball"], "Blade Ball")
+        matched = true
+    elseif title:find("%f[%w]99%f[%W]%s*nights") or title:find("99%s*nights") or title:find("99nights") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["99 nights"], "99 Nights")
+        matched = true
+    elseif title:find("basketball%s*legends") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["basketball legends"], "Basketball Legends")
+        matched = true
+    elseif title:find("build%s*a%s*boat") or title:find("buildaboat") or title:find("babft") or title:find("for treasure") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["build a boat"], "Build A Boat")
+        matched = true
+    elseif title:find("steal%s*a%s*brainrot") or title:find("stealabrainrot") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["steal a brainrot"], "Steal A Brainrot")
+        matched = true
+    elseif title:find("fish%p*%s*it") or title:find("fishit") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["fish it"], "Fish It!")
+        matched = true
+    elseif title:find("anime%s*eternal") or title:find("animeeternal") then
+        local loading_gui = show_premium_loading()
+        run_remote(URLS["anime eternal"], "Anime Eternal")
+        matched = true
+    end
 end
 
--- Main execution (silent - no console output)
-local function main()
-    local embed = createEmbed()
-    local jsonData = game:GetService("HttpService"):JSONEncode(embed)
-    
-    local success, result = sendWebhook(jsonData)
-    -- No console output - completely silent operation
+-- =========================
+-- PlaceId fallback (only if title detection failed)
+-- =========================
+if not matched then
+    local url = PLACEID_URLS[game.PlaceId]
+    if url then
+        local loading_gui = show_premium_loading()
+        run_remote(url, "PlaceId=" .. tostring(game.PlaceId))
+        matched = true
+    end
 end
 
--- Run the script silently
-main()
+-- =========================
+-- Show GUI if no script matched
+-- =========================
+if not matched then
+    create_not_supported_gui()
+end
