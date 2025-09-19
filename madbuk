@@ -1230,7 +1230,7 @@ function Library:create_ui()
                         return
                     end
                     
-                    if input.KeyCode.Name ~= Library._config._keybinds[settings.flag] then  -- Use Name
+                    if tostring(input.KeyCode) ~= Library._config._keybinds[settings.flag] then  -- Revert to tostring
                         return
                     end
                     
@@ -1240,14 +1240,14 @@ function Library:create_ui()
 
             function ModuleManager:scale_keybind(empty: boolean)
                 if Library._config._keybinds[settings.flag] and not empty then
-                    local keybind_string = Library._config._keybinds[settings.flag]  -- Already Name
+                    local keybind_string = string.gsub(tostring(Library._config._keybinds[settings.flag]), "Enum.KeyCode.", "")  -- Revert display
                     
                     local font_params = Instance.new('GetTextBoundsParams')
                     font_params.Text = keybind_string
                     font_params.Font = Font.new('rbxasset://fonts/families/Montserrat.json', Enum.FontWeight.Bold)
                     font_params.Size = 10
                     font_params.Width = 10000
-    
+
                     local font_size = TextService:GetTextBoundsAsync(font_params)
                     
                     Keybind.Size = UDim2.fromOffset(font_size.X + 6, 15)
@@ -1268,7 +1268,7 @@ function Library:create_ui()
             end
 
             if Library._config._keybinds[settings.flag] then
-                local keybind_string = Library._config._keybinds[settings.flag] == "Unknown" and "..." or Library._config._keybinds[settings.flag]
+                local keybind_string = string.gsub(tostring(Library._config._keybinds[settings.flag]), "Enum.KeyCode.", "")  -- Revert display
                 TextLabel.Text = keybind_string
 
                 ModuleManager:connect_keybind()
@@ -1317,7 +1317,7 @@ function Library:create_ui()
                     Connections['keybind_choose_start']:Disconnect()
                     Connections['keybind_choose_start'] = nil
                     
-                    Library._config._keybinds[settings.flag] = input.KeyCode.Name  -- Store as Name
+                    Library._config._keybinds[settings.flag] = tostring(input.KeyCode)  -- Revert to tostring
                     Config:save(game.GameId, Library._config)
 
                     if Connections[settings.flag..'_keybind'] then
@@ -1330,7 +1330,7 @@ function Library:create_ui()
                     
                     Library._choosing_keybind = false
 
-                    local keybind_string = Library._config._keybinds[settings.flag]  -- Already Name
+                    local keybind_string = string.gsub(tostring(Library._config._keybinds[settings.flag]), "Enum.KeyCode.", "")  -- Revert display
                     TextLabel.Text = keybind_string
                 end)
             end)
@@ -1531,9 +1531,9 @@ function Library:create_ui()
                 Label.BackgroundTransparency = 1
                 Label.TextXAlignment = Enum.TextXAlignment.Left
                 Label.BorderSizePixel = 0
-                Label.Parent = Options
                 Label.TextSize = 10;
                 Label.LayoutOrder = LayoutOrderModule
+                Label.Parent = Options
             
                 local Textbox = Instance.new('TextBox')
                 Textbox.FontFace = Font.new('rbxasset://fonts/families/SourceSansPro.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
@@ -1583,9 +1583,10 @@ function Library:create_ui()
                 self._size += 20
             
                 if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size)
+                    Module.Size = UDim2.fromOffset(241, 93 + self._size);
                 end
-                Options.Size = UDim2.fromOffset(241, self._size)
+            
+                Options.Size = UDim2.fromOffset(241, self._size);
             
                 local Checkbox = Instance.new("TextButton")
                 Checkbox.FontFace = Font.new("rbxasset://fonts/families/SourceSansPro.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
@@ -1727,19 +1728,19 @@ function Library:create_ui()
                         end
             
                         chooseConnection:Disconnect()
-                        Library._config._keybinds[settings.flag] = keyInput.KeyCode.Name  -- Store as Name
+                        Library._config._keybinds[settings.flag] = tostring(keyInput.KeyCode)  -- Revert to tostring
                         Config:save(game.GameId, Library._config)
-                        KeybindLabel.Text = keyInput.KeyCode.Name
+                        KeybindLabel.Text = string.gsub(tostring(keyInput.KeyCode), "Enum.KeyCode.", "")
                         Library._choosing_keybind = false
                     end)
                 end)
 
-                -- Update keyPressConnection to use Name
+                -- Revert keyPressConnection to use tostring
                 local keyPressConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
                     if gameProcessed then return end
                     if input.UserInputType == Enum.UserInputType.Keyboard then
                         local storedKey = Library._config._keybinds[settings.flag]
-                        if storedKey and storedKey ~= "Unknown" and input.KeyCode.Name == storedKey then
+                        if storedKey and tostring(input.KeyCode) == storedKey then
                             CheckboxManager:change_state(not CheckboxManager._state)
                         end
                     end
