@@ -3288,18 +3288,25 @@ local ClaimPlaytimeReward = NetPackage["RF/ClaimPlaytimeReward"]
 
 local autoclaim = MicTab:create_module({
     title = "AutoClaim",
-    description = "autoclaims playtime/battlepass.",
-    section = "left",
+    description = "autoclaim",
+    section = "right",
     flag = "autoclaim",
     callback = function(state)
+        -- Create a variable to control the loop
+        local isRunning = state
+
         if state then
             task.spawn(function()
-                while task.wait(5) do -- Increased to 5 seconds to reduce server load
+                while isRunning do
+                    -- Wait 5 seconds to reduce server load
+                    task.wait(5)
+
                     -- Redeem Battlepass Daily Quest if available
                     pcall(function()
                         local success = RedeemQuestsType:InvokeServer("Battlepass", "Daily")
                         if not success then
                             -- Optionally log or handle failure (e.g., quest not available)
+                            -- print("Failed to redeem Daily Battlepass quest")
                         end
                     end)
 
@@ -3308,6 +3315,7 @@ local autoclaim = MicTab:create_module({
                         local success = RedeemQuestsType:InvokeServer("Battlepass", "Weekly")
                         if not success then
                             -- Optionally log or handle failure
+                            -- print("Failed to redeem Weekly Battlepass quest")
                         end
                     end)
 
@@ -3317,11 +3325,15 @@ local autoclaim = MicTab:create_module({
                             local success = ClaimPlaytimeReward:InvokeServer(level)
                             if not success then
                                 -- Optionally log or handle failure
+                                -- print("Failed to claim Playtime Reward for level " .. level)
                             end
                         end)
                     end
                 end
             end)
+        else
+            -- When state is false, stop the loop
+            isRunning = false
         end
     end
 })
