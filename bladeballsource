@@ -1,5 +1,3 @@
-
-
 local Players = game:GetService('Players')
 local Player = Players.LocalPlayer
 local ContextActionService = game:GetService('ContextActionService')
@@ -747,6 +745,7 @@ local PlayerTab = UI:create_tab("Player", "rbxassetid://126017907477623")
 local WorldTab = UI:create_tab("World", "rbxassetid://7733964126")
 local MicTab = UI:create_tab("Misc", "rbxassetid://10723424838")
 
+
 local AutoParryModule = BlatantTab:create_module({
     title = "Auto Parry",
     description = "Automatically Parries Ball",
@@ -1309,7 +1308,7 @@ local SpinModule = PlayerTab:create_module({
                     local funcHRP = char and char:FindFirstChild("HumanoidRootPart")
                     
                     if char and funcHRP then
-                        funcHRP.CFrame *= CFrame.Angles(0, getgenv().spinSpeed, 0)
+                        funcHRP.CFrame = funcHRP.CFrame * CFrame.Angles(0, getgenv().spinSpeed, 0)
                     end
                 end
             end
@@ -1672,6 +1671,8 @@ function createArrowGui()
 		btn.TextScaled = true
 		btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 		btn.BackgroundTransparency = 0.3
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.GothamSemibold
 		btn.TextColor3 = Color3.new(1, 1, 1)
 		btn.Parent = arrowGui
 		return btn
@@ -2532,7 +2533,7 @@ local AutoPlayModule = MicTab:create_module({
 				-- Kiểm tra target liên tục
 				if ballTarget == player.Name then
 					if currentTime - lastTargetTime < 0.2 then
-						targetDuration += RunService.RenderStepped:Wait()
+						targetDuration = targetDuration + RunService.RenderStepped:Wait()
 					else
 						targetDuration = 0
 					end
@@ -2863,4 +2864,464 @@ local VisualizeModule = MicTab:create_module({
 			end
 		end
 	end
+})
+
+
+-- Store original settings for restoration
+local OriginalSettings = {
+    Lighting = {},
+    Terrain = {},
+    Rendering = {},
+    MaterialService = {},
+    FPSCap = nil,
+    Instances = {} -- To track modified instances for restoration
+}
+
+-- Optimization Module
+local optimization = MicTab:create_module({
+    title = "Optimization",
+    description = "lags when enabled .",
+    section = "left",
+    flag = "optimization",
+    callback = function(state)
+        local Players, Lighting, MaterialService = game:GetService("Players"), game:GetService("Lighting"), game:GetService("MaterialService")
+        local ME, CanBeEnabled = Players.LocalPlayer, {"ParticleEmitter", "Trail", "Smoke", "Fire", "Sparkles"}
+
+        if state then
+            -- Store original settings before applying optimizations
+            OriginalSettings.Lighting.GlobalShadows = Lighting.GlobalShadows
+            OriginalSettings.Lighting.FogEnd = Lighting.FogEnd
+            OriginalSettings.Lighting.ShadowSoftness = Lighting.ShadowSoftness
+            OriginalSettings.Lighting.Technology = sethiddenproperty and gethiddenproperty(Lighting, "Technology") or nil
+            OriginalSettings.Rendering.QualityLevel = settings().Rendering.QualityLevel
+            OriginalSettings.Rendering.MeshPartDetailLevel = settings().Rendering.MeshPartDetailLevel
+            OriginalSettings.MaterialService.Use2022Materials = MaterialService.Use2022Materials
+
+            local terrain = workspace:FindFirstChildOfClass("Terrain")
+            if terrain then
+                OriginalSettings.Terrain.WaterWaveSize = terrain.WaterWaveSize
+                OriginalSettings.Terrain.WaterWaveSpeed = terrain.WaterWaveSpeed
+                OriginalSettings.Terrain.WaterReflectance = terrain.WaterReflectance
+                OriginalSettings.Terrain.WaterTransparency = terrain.WaterTransparency
+                OriginalSettings.Terrain.Decoration = sethiddenproperty and gethiddenproperty(terrain, "Decoration") or nil
+            end
+
+            if setfpscap then
+                OriginalSettings.FPSCap = getfpscap and getfpscap() or nil
+            end
+
+            -- Enable optimizations
+            Lighting.GlobalShadows = false
+            Lighting.FogEnd = 100
+            settings().Rendering.QualityLevel = "Level01"
+
+            -- FPS Booster Logic
+            if not _G.Ignore then
+                _G.Ignore = {} -- Add Instances to ignore (e.g., _G.Ignore = {workspace.Map, workspace.Map2})
+            end
+            if not _G.Settings then
+                _G.Settings = {
+                    Players = {
+                        ["Ignore Me"] = true,
+                        ["Ignore Others"] = true,
+                        ["Ignore Tools"] = true
+                    },
+                    Meshes = {
+                        NoMesh = false,
+                        NoTexture = false,
+                        Destroy = false
+                    },
+                    Images = {
+                        Invisible = true,
+                        Destroy = false
+                    },
+                    Explosions = {
+                        Smaller = true,
+                        Invisible = false,
+                        Destroy = false
+                    },
+                    Particles = {
+                        Invisible = true,
+                        Destroy = false
+                    },
+                    TextLabels = {
+                        LowerQuality = false,
+                        Invisible = false,
+                        Destroy = false
+                    },
+                    MeshParts = {
+                        LowerQuality = true,
+                        Invisible = false,
+                        NoTexture = false,
+                        NoMesh = false,
+                        Destroy = false
+                    },
+                    Other = {
+                        ["FPS Cap"] = true,
+                        ["No Camera Effects"] = true,
+                        ["No Clothes"] = true,
+                        ["Low Water Graphics"] = true,
+                        ["No Shadows"] = true,
+                        ["Low Rendering"] = true,
+                        ["Low Quality Parts"] = true,
+                        ["Low Quality Models"] = true,
+                        ["Reset Materials"] = true,
+                        ["Lower Quality MeshParts"] = true,
+                        ClearNilInstances = false
+                    }
+                }
+            end
+
+            local function PartOfCharacter(Inst)
+                for _, v in pairs(Players:GetPlayers()) do
+                    if v ~= ME and v.Character and Inst:IsDescendantOf(v.Character) then
+                        return true
+                    end
+                end
+                return false
+            end
+
+            local function DescendantOfIgnore(Inst)
+                for _, v in pairs(_G.Ignore) do
+                    if Inst:IsDescendantOf(v) then
+                        return true
+                    end
+                end
+                return false
+            end
+
+            local function CheckIfBad(Inst)
+                if not Inst:IsDescendantOf(Players) and (_G.Settings.Players["Ignore Others"] and not PartOfCharacter(Inst) 
+                or not _G.Settings.Players["Ignore Others"]) and (_G.Settings.Players["Ignore Me"] and ME.Character and not Inst:IsDescendantOf(ME.Character) 
+                or not _G.Settings.Players["Ignore Me"]) and (_G.Settings.Players["Ignore Tools"] and not Inst:IsA("BackpackItem") and not Inst:FindFirstAncestorWhichIsA("BackpackItem") 
+                or not _G.Settings.Players["Ignore Tools"]) and (_G.Ignore and not table.find(_G.Ignore, Inst) and not DescendantOfIgnore(Inst) 
+                or (not _G.Ignore or type(_G.Ignore) ~= "table" or #_G.Ignore <= 0)) then
+                    if Inst:IsA("DataModelMesh") then
+                        if Inst:IsA("SpecialMesh") then
+                            if _G.Settings.Meshes.NoMesh then
+                                Inst.MeshId = ""
+                                table.insert(OriginalSettings.Instances, {Inst, "MeshId", Inst.MeshId})
+                            end
+                            if _G.Settings.Meshes.NoTexture then
+                                Inst.TextureId = ""
+                                table.insert(OriginalSettings.Instances, {Inst, "TextureId", Inst.TextureId})
+                            end
+                        end
+                        if _G.Settings.Meshes.Destroy then
+                            Inst:Destroy()
+                        end
+                    elseif Inst:IsA("FaceInstance") then
+                        if _G.Settings.Images.Invisible then
+                            local originalTransparency = Inst.Transparency
+                            Inst.Transparency = 1
+                            Inst.Shiny = 1
+                            table.insert(OriginalSettings.Instances, {Inst, "Transparency", originalTransparency})
+                            table.insert(OriginalSettings.Instances, {Inst, "Shiny", Inst.Shiny})
+                        end
+                        if _G.Settings.Images.LowDetail then
+                            local originalShiny = Inst.Shiny
+                            Inst.Shiny = 1
+                            table.insert(OriginalSettings.Instances, {Inst, "Shiny", originalShiny})
+                        end
+                        if _G.Settings.Images.Destroy then
+                            Inst:Destroy()
+                        end
+                    elseif Inst:IsA("ShirtGraphic") then
+                        if _G.Settings.Images.Invisible then
+                            local originalGraphic = Inst.Graphic
+                            Inst.Graphic = ""
+                            table.insert(OriginalSettings.Instances, {Inst, "Graphic", originalGraphic})
+                        end
+                        if _G.Settings.Images.Destroy then
+                            Inst:Destroy()
+                        end
+                    elseif table.find(CanBeEnabled, Inst.ClassName) then
+                        if _G.Settings.Particles.Invisible then
+                            local originalEnabled = Inst.Enabled
+                            Inst.Enabled = false
+                            table.insert(OriginalSettings.Instances, {Inst, "Enabled", originalEnabled})
+                        end
+                        if _G.Settings.Particles.Destroy then
+                            Inst:Destroy()
+                        end
+                    elseif Inst:IsA("PostEffect") and _G.Settings.Other["No Camera Effects"] then
+                        local originalEnabled = Inst.Enabled
+                        Inst.Enabled = false
+                        table.insert(OriginalSettings.Instances, {Inst, "Enabled", originalEnabled})
+                    elseif Inst:IsA("Explosion") then
+                        if _G.Settings.Explosions.Smaller then
+                            local originalPressure = Inst.BlastPressure
+                            local originalRadius = Inst.BlastRadius
+                            Inst.BlastPressure = 1
+                            Inst.BlastRadius = 1
+                            table.insert(OriginalSettings.Instances, {Inst, "BlastPressure", originalPressure})
+                            table.insert(OriginalSettings.Instances, {Inst, "BlastRadius", originalRadius})
+                        end
+                        if _G.Settings.Explosions.Invisible then
+                            local originalVisible = Inst.Visible
+                            Inst.BlastPressure = 1
+                            Inst.BlastRadius = 1
+                            Inst.Visible = false
+                            table.insert(OriginalSettings.Instances, {Inst, "Visible", originalVisible})
+                        end
+                        if _G.Settings.Explosions.Destroy then
+                            Inst:Destroy()
+                        end
+                    elseif Inst:IsA("Clothing") or Inst:IsA("SurfaceAppearance") or Inst:IsA("BaseWrap") then
+                        if _G.Settings.Other["No Clothes"] then
+                            Inst:Destroy()
+                        end
+                    elseif Inst:IsA("BasePart") and not Inst:IsA("MeshPart") then
+                        if _G.Settings.Other["Low Quality Parts"] then
+                            local originalMaterial = Inst.Material
+                            local originalReflectance = Inst.Reflectance
+                            Inst.Material = Enum.Material.Plastic
+                            Inst.Reflectance = 0
+                            table.insert(OriginalSettings.Instances, {Inst, "Material", originalMaterial})
+                            table.insert(OriginalSettings.Instances, {Inst, "Reflectance", originalReflectance})
+                        end
+                    elseif Inst:IsA("TextLabel") and Inst:IsDescendantOf(workspace) then
+                        if _G.Settings.TextLabels.LowerQuality then
+                            local originalFont = Inst.Font
+                            local originalTextScaled = Inst.TextScaled
+                            local originalRichText = Inst.RichText
+                            local originalTextSize = Inst.TextSize
+                            Inst.Font = Enum.Font.SourceSans
+                            Inst.TextScaled = false
+                            Inst.RichText = false
+                            Inst.TextSize = 14
+                            table.insert(OriginalSettings.Instances, {Inst, "Font", originalFont})
+                            table.insert(OriginalSettings.Instances, {Inst, "TextScaled", originalTextScaled})
+                            table.insert(OriginalSettings.Instances, {Inst, "RichText", originalRichText})
+                            table.insert(OriginalSettings.Instances, {Inst, "TextSize", originalTextSize})
+                        end
+                        if _G.Settings.TextLabels.Invisible then
+                            local originalVisible = Inst.Visible
+                            Inst.Visible = false
+                            table.insert(OriginalSettings.Instances, {Inst, "Visible", originalVisible})
+                        end
+                        if _G.Settings.TextLabels.Destroy then
+                            Inst:Destroy()
+                        end
+                    elseif Inst:IsA("Model") then
+                        if _G.Settings.Other["Low Quality Models"] then
+                            local originalLOD = Inst.LevelOfDetail
+                            Inst.LevelOfDetail = 1
+                            table.insert(OriginalSettings.Instances, {Inst, "LevelOfDetail", originalLOD})
+                        end
+                    elseif Inst:IsA("MeshPart") then
+                        if _G.Settings.MeshParts.LowerQuality then
+                            local originalFidelity = Inst.RenderFidelity
+                            local originalReflectance = Inst.Reflectance
+                            local originalMaterial = Inst.Material
+                            Inst.RenderFidelity = 2
+                            Inst.Reflectance = 0
+                            Inst.Material = Enum.Material.Plastic
+                            table.insert(OriginalSettings.Instances, {Inst, "RenderFidelity", originalFidelity})
+                            table.insert(OriginalSettings.Instances, {Inst, "Reflectance", originalReflectance})
+                            table.insert(OriginalSettings.Instances, {Inst, "Material", originalMaterial})
+                        end
+                        if _G.Settings.MeshParts.Invisible then
+                            local originalTransparency = Inst.Transparency
+                            Inst.Transparency = 1
+                            Inst.RenderFidelity = 2
+                            Inst.Reflectance = 0
+                            Inst.Material = Enum.Material.Plastic
+                            table.insert(OriginalSettings.Instances, {Inst, "Transparency", originalTransparency})
+                        end
+                        if _G.Settings.MeshParts.NoTexture then
+                            local originalTexture = Inst.TextureID
+                            Inst.TextureID = ""
+                            table.insert(OriginalSettings.Instances, {Inst, "TextureID", originalTexture})
+                        end
+                        if _G.Settings.MeshParts.NoMesh then
+                            local originalMesh = Inst.MeshId
+                            Inst.MeshId = ""
+                            table.insert(OriginalSettings.Instances, {Inst, "MeshId", originalMesh})
+                        end
+                        if _G.Settings.MeshParts.Destroy then
+                            Inst:Destroy()
+                        end
+                    end
+                end
+            end
+
+            -- Apply optimizations
+            if _G.Settings.Other["Low Water Graphics"] then
+                local terrain = workspace:FindFirstChildOfClass("Terrain") or workspace:WaitForChild("Terrain")
+                OriginalSettings.Terrain.WaterWaveSize = terrain.WaterWaveSize
+                OriginalSettings.Terrain.WaterWaveSpeed = terrain.WaterWaveSpeed
+                OriginalSettings.Terrain.WaterReflectance = terrain.WaterReflectance
+                OriginalSettings.Terrain.WaterTransparency = terrain.WaterTransparency
+                OriginalSettings.Terrain.Decoration = sethiddenproperty and gethiddenproperty(terrain, "Decoration") or nil
+                terrain.WaterWaveSize = 0
+                terrain.WaterWaveSpeed = 0
+                terrain.WaterReflectance = 0
+                terrain.WaterTransparency = 0
+                if sethiddenproperty then
+                    sethiddenproperty(terrain, "Decoration", false)
+                end
+            end
+
+            if _G.Settings.Other["No Shadows"] then
+                OriginalSettings.Lighting.ShadowSoftness = Lighting.ShadowSoftness
+                Lighting.GlobalShadows = false
+                Lighting.FogEnd = 9e9
+                Lighting.ShadowSoftness = 0
+                if sethiddenproperty then
+                    OriginalSettings.Lighting.Technology = gethiddenproperty(Lighting, "Technology")
+                    sethiddenproperty(Lighting, "Technology", 2)
+                end
+            end
+
+            if _G.Settings.Other["Low Rendering"] then
+                OriginalSettings.Rendering.MeshPartDetailLevel = settings().Rendering.MeshPartDetailLevel
+                settings().Rendering.QualityLevel = 1
+                settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+            end
+
+            if _G.Settings.Other["Reset Materials"] then
+                OriginalSettings.MaterialService.Use2022Materials = MaterialService.Use2022Materials
+                for _, v in pairs(MaterialService:GetChildren()) do
+                    v:Destroy()
+                end
+                MaterialService.Use2022Materials = false
+            end
+
+            if _G.Settings.Other["FPS Cap"] then
+                if setfpscap then
+                    OriginalSettings.FPSCap = getfpscap and getfpscap() or nil
+                    setfpscap(1e6) -- Uncap FPS
+                end
+            end
+
+            if _G.Settings.Other["ClearNilInstances"] then
+                if getnilinstances then
+                    for _, v in pairs(getnilinstances()) do
+                        pcall(v.Destroy, v)
+                    end
+                end
+            end
+
+            -- Process existing descendants
+            for _, v in pairs(game:GetDescendants()) do
+                CheckIfBad(v)
+            end
+
+            -- Monitor new descendants
+            local descendantConnection
+            descendantConnection = game.DescendantAdded:Connect(function(value)
+                task.wait(_G.LoadedWait or 1)
+                CheckIfBad(value)
+            end)
+            OriginalSettings.DescendantConnection = descendantConnection
+        else
+            -- Restore original settings
+            Lighting.GlobalShadows = OriginalSettings.Lighting.GlobalShadows or true
+            Lighting.FogEnd = OriginalSettings.Lighting.FogEnd or 100000
+            Lighting.ShadowSoftness = OriginalSettings.Lighting.ShadowSoftness or 0.2
+            if sethiddenproperty and OriginalSettings.Lighting.Technology then
+                sethiddenproperty(Lighting, "Technology", OriginalSettings.Lighting.Technology)
+            end
+            settings().Rendering.QualityLevel = OriginalSettings.Rendering.QualityLevel or "Automatic"
+            settings().Rendering.MeshPartDetailLevel = OriginalSettings.Rendering.MeshPartDetailLevel or Enum.MeshPartDetailLevel.Level21
+            MaterialService.Use2022Materials = OriginalSettings.MaterialService.Use2022Materials or true
+
+            local terrain = workspace:FindFirstChildOfClass("Terrain")
+            if terrain and OriginalSettings.Terrain then
+                terrain.WaterWaveSize = OriginalSettings.Terrain.WaterWaveSize or 0.1
+                terrain.WaterWaveSpeed = OriginalSettings.Terrain.WaterWaveSpeed or 10
+                terrain.WaterReflectance = OriginalSettings.Terrain.WaterReflectance or 0.3
+                terrain.WaterTransparency = OriginalSettings.Terrain.WaterTransparency or 0.5
+                if sethiddenproperty and OriginalSettings.Terrain.Decoration ~= nil then
+                    sethiddenproperty(terrain, "Decoration", OriginalSettings.Terrain.Decoration)
+                end
+            end
+
+            if setfpscap and OriginalSettings.FPSCap then
+                setfpscap(OriginalSettings.FPSCap)
+            end
+
+            -- Restore modified instances
+            for _, data in pairs(OriginalSettings.Instances) do
+                local inst, prop, originalValue = data[1], data[2], data[3]
+                if inst and inst.Parent then -- Ensure instance still exists
+                    if prop == "Transparency" or prop == "Reflectance" or prop == "TextSize" then
+                        inst[prop] = tonumber(originalValue) or inst[prop] -- Handle numeric properties
+                    elseif prop == "Enabled" or prop == "Visible" or prop == "TextScaled" or prop == "RichText" then
+                        inst[prop] = originalValue == true or originalValue == false and originalValue or inst[prop] -- Handle boolean properties
+                    elseif prop == "Material" then
+                        inst[prop] = Enum.Material[originalValue] or Enum.Material.Plastic -- Handle enum
+                    elseif prop == "Font" then
+                        inst[prop] = Enum.Font[originalValue] or Enum.Font.SourceSans -- Handle font enum
+                    elseif prop == "MeshId" or prop == "TextureId" or prop == "Graphic" then
+                        inst[prop] = originalValue ~= "" and originalValue or inst[prop] -- Handle string IDs
+                    elseif prop == "BlastPressure" or prop == "BlastRadius" or prop == "LevelOfDetail" or prop == "RenderFidelity" then
+                        inst[prop] = tonumber(originalValue) or inst[prop] -- Handle numeric properties
+                    end
+                end
+            end
+            OriginalSettings.Instances = {} -- Clear instance list after restoration
+
+            -- Disconnect DescendantAdded connection
+            if OriginalSettings.DescendantConnection then
+                OriginalSettings.DescendantConnection:Disconnect()
+                OriginalSettings.DescendantConnection = nil
+            end
+
+            -- Clear OriginalSettings to free memory
+            OriginalSettings = {
+                Lighting = {},
+                Terrain = {},
+                Rendering = {},
+                MaterialService = {},
+                FPSCap = nil,
+                Instances = {}
+            }
+        end
+    end
+})
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local NetPackage = ReplicatedStorage.Packages._Index["sleitnick_net@0.1.0"].net
+local RedeemQuestsType = NetPackage["RF/RedeemQuestsType"]
+local ClaimPlaytimeReward = NetPackage["RF/ClaimPlaytimeReward"]
+
+local autoclaim = MicTab:create_module({
+    title = "AutoClaim",
+    description = "autoclaims playtime/battlepass.",
+    section = "left",
+    flag = "autoclaim",
+    callback = function(state)
+        if state then
+            task.spawn(function()
+                while task.wait(5) do -- Increased to 5 seconds to reduce server load
+                    -- Redeem Battlepass Daily Quest if available
+                    pcall(function()
+                        local success = RedeemQuestsType:InvokeServer("Battlepass", "Daily")
+                        if not success then
+                            -- Optionally log or handle failure (e.g., quest not available)
+                        end
+                    end)
+
+                    -- Redeem Battlepass Weekly Quest if available
+                    pcall(function()
+                        local success = RedeemQuestsType:InvokeServer("Battlepass", "Weekly")
+                        if not success then
+                            -- Optionally log or handle failure
+                        end
+                    end)
+
+                    -- Claim Playtime Rewards (levels 1-6) if available
+                    for level = 1, 6 do
+                        pcall(function()
+                            local success = ClaimPlaytimeReward:InvokeServer(level)
+                            if not success then
+                                -- Optionally log or handle failure
+                            end
+                        end)
+                    end
+                end
+            end)
+        end
+    end
 })
