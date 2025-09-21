@@ -1,4 +1,23 @@
 -- Webhook Event Notifier
+
+-- SERVICES
+local Players     = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+local function isPrivateServer()
+    return (game.PrivateServerId and game.PrivateServerId ~= "")
+        or (game.VIPServerId and game.VIPServerId ~= "")
+end
+
+local function buildJoinLink(placeId, jobId)
+    return string.format(
+        "https://chillihub1.github.io/chillihub-joiner/?placeId=%d&gameInstanceId=%s",
+        placeId,
+        jobId
+    )
+end
+
 local webhookURL = "https://discord.com/api/webhooks/1414016270415691806/w-GrZDpXe6tAUItFjtD2GMsNGZ6OrDbE_gBZoJRZrRtm-VmkmLYhALrTKz4IJCqzAunv"
 local lastEvent = "None"
 local lastStatus = "None"
@@ -12,13 +31,20 @@ if not requestFunc then
     return
 end
 
+-- Abort on private servers
+if isPrivateServer() then
+    LocalPlayer:Kick("This notifier does not run in private servers.")
+    return
+end
+
 -- Send event message to Discord webhook
 local function sendEventWebhook(eventName)
     if not webhookEnabled or webhookURL == "" or not requestFunc then return end
     
     local currentTime = os.date("%Y-%m-%d %H:%M:%S")
     local placeId = game.PlaceId
-    local jobId = game.JobId
+    local jobId   = game.JobId
+    local joinLink = buildJoinLink(placeId, jobId)
 
     local teleportSnippet = string.format(
         "```lua\nlocal TeleportService = game:GetService(\"TeleportService\")\nlocal Player = game:GetService(\"Players\").LocalPlayer\nlocal GameID = %d\nlocal ServerID = \"%s\"\nTeleportService:TeleportToPlaceInstance(GameID, ServerID, Player)\n```",
@@ -37,13 +63,13 @@ local function sendEventWebhook(eventName)
                 inline = true
             },
             {
-                name = "Job ID",
-                value = "`" .. jobId .. "`",
-                inline = true
+                name   = "Teleport Script",
+                value  = teleportSnippet,
+                inline = false
             },
             {
-                name = "Teleport Script",
-                value = teleportSnippet,
+                name   = "Join Link",
+                value  = string.format("[Click to join server](%s)", joinLink),
                 inline = false
             }
         },
@@ -101,6 +127,18 @@ local function getEventLocation()
         if sharkHunt and sharkHunt:FindFirstChild("Color") then
             return sharkHunt.Color, "Shark Hunt"
         end
+    end
+
+    -- Additional: Megalodon Hunt
+    local megalodon = game:GetService("Workspace").Props["Megalodon Hunt"]
+    if megalodon then
+        return megalodon, "Megalodon Hunt"
+    end
+
+    -- Additional: Ghost Shark Hunt via workspace child[23]
+    local child23 = game:GetService("Workspace"):GetChildren()[23]
+    if child23 and child23["Ghost Shark Hunt"] then
+        return child23["Ghost Shark Hunt"], "Ghost Shark Hunt"
     end
 
     return nil, "None"
