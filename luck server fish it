@@ -1,3 +1,28 @@
+--// SERVICES
+local Players     = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+--// PRIVATE SERVER CHECK (works for VIP + Reserved)
+local function isPrivateServer()
+    return (game.PrivateServerId and game.PrivateServerId ~= "")
+        or (game.VIPServerId and game.VIPServerId ~= "")
+end
+
+local function buildJoinLink(placeId, jobId)
+    return string.format(
+        "https://chillihub1.github.io/chillihub-joiner/?placeId=%d&gameInstanceId=%s",
+        placeId,
+        jobId
+    )
+end
+
+-- Abort on private servers
+if isPrivateServer() then
+    LocalPlayer:Kick("This notifier does not run in private servers.")
+    return
+end
+
 --// Services
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
