@@ -1275,18 +1275,19 @@ function Library:create_ui()
                 ModuleManager:scale_keybind()
             end
 
-            Connections[settings.flag..'_input_began'] = Header.InputBegan:Connect(function(input: InputObject)
+            Connections[settings.flag..'_input_began'] = Header.InputBegan:Connect(function(input)
                 if Library._choosing_keybind then
                     return
                 end
 
-                if input.UserInputType ~= Enum.UserInputType.MouseButton3 then
+                -- Use left click or touch to start keybind selection
+                if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
                     return
                 end
                 
                 Library._choosing_keybind = true
                 
-                Connections['keybind_choose_start'] = UserInputService.InputBegan:Connect(function(input: InputObject, process: boolean)
+                Connections['keybind_choose_start'] = UserInputService.InputBegan:Connect(function(input, process)
                     if process then
                         return
                     end
