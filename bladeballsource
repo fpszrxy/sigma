@@ -32,12 +32,6 @@ local ReplicatedStorage = game:GetService('ReplicatedStorage')
 
 local Tornado_Time = tick()
 
-local UserInputService = game:GetService('UserInputService')
-local Last_Input = UserInputService:GetLastInputType()
-
-local Debris = game:GetService('Debris')
-local RunService = game:GetService('RunService')
-
 local Vector2_Mouse_Location = nil
 local Grab_Parry = nil
 
@@ -2826,7 +2820,7 @@ local VisualizeModule = MicTab:create_module({
 				fieldPart.Shape = Enum.PartType.Ball
 				fieldPart.Material = Enum.Material.ForceField
 				fieldPart.CastShadow = false
-				fieldPart.Color = Color3.fromRGB(88, 131, 202)
+				fieldPart.Color = Color3.fromRGB(20, 20, 50)
 				fieldPart.Name = "VisualField"
 				fieldPart.Parent = workspace
 			end
@@ -2850,8 +2844,14 @@ local VisualizeModule = MicTab:create_module({
 				local size = math.clamp(speed, 25, 250)
 
 				-- Cập nhật field
-				fieldPart.Position = root.Position
-				fieldPart.Size = Vector3.new(size, size, size)
+				local currentChar = player.Character
+				if currentChar then
+					local currentRoot = currentChar:FindFirstChild("HumanoidRootPart")
+					if currentRoot then
+						fieldPart.Position = currentRoot.Position
+						fieldPart.Size = Vector3.new(size, size, size)
+					end
+				end
 			end)
 		else
 			if visualizeConnection then
@@ -2867,6 +2867,7 @@ local VisualizeModule = MicTab:create_module({
 })
 
 
+do
 -- Store original settings for restoration
 local OriginalSettings = {
     Lighting = {},
@@ -3281,11 +3282,12 @@ local optimization = MicTab:create_module({
         end
     end
 })
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+end
 local NetPackage = ReplicatedStorage.Packages._Index["sleitnick_net@0.1.0"].net
 local RedeemQuestsType = NetPackage["RF/RedeemQuestsType"]
 local ClaimPlaytimeReward = NetPackage["RF/ClaimPlaytimeReward"]
 
+do
 local autoclaim = MicTab:create_module({
     title = "AutoClaim",
     description = "autoclaim",
@@ -3337,3 +3339,85 @@ local autoclaim = MicTab:create_module({
         end
     end
 })
+-- FPS & Ping Display
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FPSPingGui"
+screenGui.Parent = game:GetService("CoreGui")
+
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Name = "FPSLabel"
+fpsLabel.Size = UDim2.new(0, 200, 0, 60)
+fpsLabel.Position = UDim2.new(0.5, -100, 0, 10) -- Centered horizontally, 10 pixels from top
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.TextColor3 = Color3.new(1, 1, 1)
+fpsLabel.TextStrokeTransparency = 0
+fpsLabel.Font = Enum.Font.SourceSans
+fpsLabel.TextSize = 40
+fpsLabel.AnchorPoint = Vector2.new(0.5, 0) -- Center the FPS label
+fpsLabel.Parent = screenGui
+fpsLabel.Visible = false -- Initially hidden
+
+local pingLabel = Instance.new("TextLabel")
+pingLabel.Name = "PingLabel"
+pingLabel.Size = UDim2.new(0, 100, 0, 50)
+pingLabel.Position = UDim2.new(0.5, 110, 0, 15) -- Slightly to the right of FPS label
+pingLabel.BackgroundTransparency = 1
+pingLabel.TextColor3 = Color3.new(1, 1, 1)
+pingLabel.TextStrokeTransparency = 0
+pingLabel.Font = Enum.Font.SourceSans
+pingLabel.TextSize = 24
+pingLabel.AnchorPoint = Vector2.new(0.5, 0) -- Center the Ping label
+pingLabel.Parent = screenGui
+pingLabel.Visible = false -- Initially hidden
+
+-- FPS calculation function
+local function calculateFPS()
+    local lastTime = tick()
+    local frames = 0
+    game:GetService("RunService").RenderStepped:Connect(function()
+        frames = frames + 1
+        local currentTime = tick()
+        if currentTime - lastTime >= 0.1 then
+            local fps = math.floor(frames / (currentTime - lastTime))
+            fpsLabel.Text = "FPS: " .. tostring(fps)
+            if fps < 10 then
+                fpsLabel.TextColor3 = Color3.new(1, 0, 0) -- Red for low FPS
+            else
+                fpsLabel.TextColor3 = Color3.new(1, 1, 1) -- White otherwise
+            end
+            frames = 0
+            lastTime = currentTime
+        end
+    end)
+end
+
+-- Ping calculation function
+local function calculatePing()
+    game:GetService("RunService").Heartbeat:Connect(function()
+        local ping = game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue()
+        pingLabel.Text = "Ping: " .. tostring(math.floor(ping)) .. " ms"
+        if ping > 300 then
+            pingLabel.TextColor3 = Color3.new(1, 0, 0) -- Red for high ping
+        else
+            pingLabel.TextColor3 = Color3.new(1, 1, 1) -- White otherwise
+        end
+    end)
+end
+
+-- Create a module for FPS and Ping display
+local fpsPingModule = MicTab:create_module({
+    title = "FPS & Ping Display",
+    flag = "FPS_Ping_Display",
+    description = "Shows FPS and Ping on screen",
+    section = "left",
+    callback = function(value)
+        -- Toggle visibility of FPS and Ping labels
+        fpsLabel.Visible = value
+        pingLabel.Visible = value
+    end
+})
+
+-- Start FPS and Ping calculations
+calculateFPS()
+calculatePing()
+end
