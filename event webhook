@@ -18,7 +18,7 @@ local function buildJoinLink(placeId, jobId)
     )
 end
 
-local webhookURL = "https://discord.com/api/webhooks/1414016270415691806/w-GrZDpXe6tAUItFjtD2GMsNGZ6OrDbE_gBZoJRZrRtm-VmkmLYhALrTKz4IJCqzAunv"
+local webhookURL = ""
 local lastEvent = "None"
 local lastStatus = "None"
 local checkInterval = 180 -- 3 minutes
