@@ -1,728 +1,769 @@
----@diagnostic disable: undefined-global
--- Helpers
-local task = task
-local Enum = Enum
--- =========================
-local function httpget(url)
-    return game:HttpGet(url)
-end
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/sametexe001/sametlibs/refs/heads/main/nexonix/Library.lua"))()
 
-local function run_remote(url, label)
-    local ok, err = pcall(function()
-        return loadstring(httpget(url))()
-    end)
-end
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
+local Player = Players.LocalPlayer
 
--- =========================
--- Discord Notification
--- =========================
-local function show_discord_notification()
-    -- Discord link is handled by the button in the loading screen
-end
-
--- Show Discord notification first (placeholder)
-show_discord_notification()
-
--- =========================
--- Always run base script (log)
--- =========================
-run_remote("https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/log", "log")
-
--- =========================
--- Game detection by title (MarketplaceService)
--- =========================
-local MarketplaceService = game:GetService("MarketplaceService")
-local ok, info = pcall(MarketplaceService.GetProductInfo, MarketplaceService, game.PlaceId)
-local title = ""
-if ok and info and typeof(info.Name) == "string" then
-    title = string.lower(info.Name)
-end
-
--- Map of friendly names -> URLs
-local URLS = {
-    ["bladeball"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/bladeballsource",
-    ["99 nights"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/99nightsnew",
-    ["basketball legends"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Basketball%20Legends.lua",
-    ["build a boat"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/babft",
-    ["steal a brainrot"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/steal%20a%20brainrot",
-    ["fish it"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/fish%20it",
-    ["anime eternal"] = "https://raw.githubusercontent.com/fpszrxy/sigma/refs/heads/main/Anime%20Eternal"
+-- Settings
+getgenv().Aeloe = {
+    AutoParry = false,
+    PingBasedOffset = 1.95,
+    DistanceToParry = 2.0,
+    PredictPosition = true,
+    AdaptivePing = true,
+    AutoSpam = false,
+    ManualSpam = false,
+    SpamSpeedThreshold = 120,
+    SpamDistance = 20,
+    SpamInterval = 0.008,
+    Visuals = true,
+    AutoHideIfMiss = false,
+    CurveMode = "Camera",
+    BallTrail = false,
+    BallRainbow = false,
+    TrailColor1 = Color3.fromRGB(255, 0, 0),
+    TrailColor2 = Color3.fromRGB(0, 0, 255),
+    CircleColor = Color3.fromRGB(0, 255, 0),
+    CircleTransparency = 0.5,
+    CircleSize = 20,
 }
 
--- Map of PlaceIds -> URLs
-local PLACEID_URLS = {
-    -- Blade Ball (main + alternate places)
-    [13772394625] = URLS["bladeball"],
-    [14525514348] = URLS["bladeball"],
-    [14732610803] = URLS["bladeball"],
+local SETTINGS = getgenv().Aeloe
+local LastClick = 0
+local LastBallHit = nil
+local IsParrying = false
+local frameCounter = 0
+local pingHistory = {}
+local pingHistoryMax = 10
+local adaptivePingOffset = SETTINGS.PingBasedOffset
+local lastBallVel = Vector3.zero
+local isSpamming = false
+local rainbowHue = 0
+local ballTrailObj = nil
+local ballRainbowConnection = nil
 
-    -- 99 Nights
-    [126509999114328] = URLS["99 nights"],
+local BallsFolder = workspace:FindFirstChild("Balls") or workspace:WaitForChild("Balls", 5)
 
-    -- Basketball Legends
-    [12355337193] = URLS["basketball legends"],
-    [14386691987] = URLS["basketball legends"],
-    
-    -- Build A Boat
-    [537413528] = URLS["build a boat"],
-    
-    -- Steal A Brainrot (multiple versions)
-    [96342491571673] = URLS["steal a brainrot"],
-    [7709344486] = URLS["steal a brainrot"],
-    
-    -- Fish It!
-    [121864768012064] = URLS["fish it"],
-    
-    -- Anime Eternal
-    [90462358603255] = URLS["anime eternal"]
-}
+-- Network stats
+local NetworkStats = nil
+pcall(function()
+    NetworkStats = Stats:FindFirstChild("Network")
+        and Stats.Network:FindFirstChild("ServerStatsItem")
+        and Stats.Network.ServerStatsItem:FindFirstChild("Data Ping")
+end)
 
--- =========================
--- Clean up existing GUIs
--- =========================
-local function cleanup_old_guis()
-    local CoreGui = game:GetService("CoreGui")
-    for _, gui in ipairs(CoreGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and (gui.Name == "PremiumLoadingGui" or gui.Name == "NotSupportedGui") then
-            gui:Destroy()
+local function GetPing()
+    local ping = 0.04
+    pcall(function()
+        if NetworkStats then
+            ping = math.clamp(NetworkStats.Value / 1000, 0.005, 0.5)
         end
+    end)
+    return ping
+end
+
+local function UpdateAdaptivePing(ping)
+    if not SETTINGS.AdaptivePing then return end
+    table.insert(pingHistory, ping)
+    if #pingHistory > pingHistoryMax then table.remove(pingHistory, 1) end
+    local sum = 0
+    for _, v in ipairs(pingHistory) do sum = sum + v end
+    adaptivePingOffset = SETTINGS.PingBasedOffset + ((sum / #pingHistory) * 0.5)
+end
+
+local function GetBall()
+    if not BallsFolder then return nil end
+    local children = BallsFolder:GetChildren()
+    for i = 1, #children do
+        local v = children[i]
+        local ok, result = pcall(function() return v:GetAttribute("realBall") == true end)
+        if ok and result then return v end
+    end
+    for i = 1, #children do
+        local v = children[i]
+        if v:IsA("BasePart") then
+            local ok, mag = pcall(function() return v.AssemblyLinearVelocity.Magnitude end)
+            if ok and mag and mag > 15 then return v end
+        end
+    end
+    return nil
+end
+
+local function IsTargeted()
+    local char = Player.Character
+    if not char then return false end
+    local ok, attr = pcall(function() return char:GetAttribute("Targeted") == true end)
+    if ok and attr then return true end
+    local highlight = char:FindFirstChildWhichIsA("Highlight")
+    if highlight and highlight.Parent == char then return true end
+    return false
+end
+
+local function FireClick()
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+end
+
+-- Curve mode prediction
+local function GetPredictedPosition(ball, velocity, ping)
+    if not SETTINGS.PredictPosition then return ball.Position end
+    local char = Player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local mode = SETTINGS.CurveMode
+
+    local gravity = workspace.Gravity
+    local basePos = ball.Position
+        + (velocity * ping)
+        + Vector3.new(0, -0.5 * gravity * ping * ping, 0)
+
+    if mode == "Camera" then
+        local camera = workspace.CurrentCamera
+        local camDir = camera.CFrame.LookVector
+        return basePos + camDir * 0.5
+    elseif mode == "Random" then
+        return basePos + Vector3.new(
+            math.random(-2, 2) * 0.1,
+            math.random(-2, 2) * 0.1,
+            math.random(-2, 2) * 0.1
+        )
+    elseif mode == "Accelerated" then
+        local BallAcceleration = (velocity - lastBallVel) / math.max(ping, 0.001)
+        return basePos + (BallAcceleration * 0.5 * ping * ping)
+    elseif mode == "Backwards" then
+        return basePos - velocity * ping * 0.3
+    elseif mode == "Slow" then
+        return ball.Position + velocity * (ping * 0.5)
+    elseif mode == "High" then
+        return basePos + Vector3.new(0, 5, 0)
+    end
+    return basePos
+end
+
+local function SendClick(ball)
+    if not SETTINGS.AutoParry or IsParrying then return end
+    local now = tick()
+    if LastBallHit == ball and (now - LastClick) < 0.5 then return end
+    if (now - LastClick) < 0.05 then return end
+    IsParrying = true
+    LastClick = now
+    LastBallHit = ball
+    FireClick()
+    task.delay(0.05, function() IsParrying = false end)
+end
+
+-- 3D World Circle
+local circlepart = Instance.new("Part")
+circlepart.Name = "ParryCircle"
+circlepart.Anchored = true
+circlepart.CanCollide = false
+circlepart.CanQuery = false
+circlepart.CanTouch = false
+circlepart.CastShadow = false
+circlepart.Size = Vector3.new(0.1, SETTINGS.CircleSize, SETTINGS.CircleSize)
+circlepart.Shape = Enum.PartType.Cylinder
+circlepart.Material = Enum.Material.Neon
+circlepart.Color = SETTINGS.CircleColor
+circlepart.Transparency = 1
+circlepart.Parent = workspace
+
+local function UpdateCircle(root, state)
+    if not SETTINGS.Visuals or not root then
+        circlepart.Transparency = 1
+        return
+    end
+
+    circlepart.Size = Vector3.new(0.1, SETTINGS.CircleSize, SETTINGS.CircleSize)
+    circlepart.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, 0, math.rad(90))
+
+    if isSpamming then
+        circlepart.Color = Color3.fromRGB(255, 50, 255)
+        circlepart.Transparency = 0.2
+    elseif state == "clash" then
+        circlepart.Color = Color3.fromRGB(255, 0, 0)
+        circlepart.Transparency = 0.2
+    elseif state == "target" then
+        circlepart.Color = Color3.fromRGB(255, 165, 0)
+        circlepart.Transparency = 0.3
+    else
+        circlepart.Color = SETTINGS.CircleColor
+        circlepart.Transparency = SETTINGS.CircleTransparency
     end
 end
 
--- =========================
--- Premium Loading Screen Function
--- =========================
-local function show_premium_loading()
-    local Players = game:GetService("Players")
-    local TweenService = game:GetService("TweenService")
-    local RunService = game:GetService("RunService")
-    local CoreGui = game:GetService("CoreGui")
-    local UserInputService = game:GetService("UserInputService")
-    
-    -- Clean up any existing GUIs
-    cleanup_old_guis()
-    
-    -- Create the GUI - place it in CoreGui to ensure it's on top
-    local gui = Instance.new("ScreenGui")
-    -- Define theme colors
-    local accentColor = Color3.fromRGB(75, 198, 89) -- vibrant green
-    local darkBgColor = Color3.fromRGB(20, 50, 20) -- dark green background
-
-    gui.Name = "PremiumLoadingGui"
-    gui.ResetOnSpawn = false
-    gui.IgnoreGuiInset = true
-    gui.DisplayOrder = 10000
-    gui.Parent = CoreGui
-
-    -- Semi-transparent overlay covering entire screen
-    local overlay = Instance.new("Frame")
-    overlay.Size = UDim2.new(1, 0, 1, 0)
-    overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    overlay.BackgroundTransparency = 0.6
-    overlay.BorderSizePixel = 0
-    overlay.ZIndex = 5
-    overlay.Parent = gui
-
-    -- Gradient background covering entire screen (green tint)
-    local background = Instance.new("Frame")
-    background.Size = UDim2.new(1, 0, 1, 0)
-    background.BackgroundColor3 = darkBgColor
-    local gradient = Instance.new("UIGradient")
-    -- Gradient from dark background to accent color
-    gradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, darkBgColor),
-        ColorSequenceKeypoint.new(1, accentColor)
-    }
-    gradient.Rotation = 90
-    gradient.Parent = background
-    background.BorderSizePixel = 0
-    background.ZIndex = 6
-    background.Parent = gui
-
-    -- Particle effects (server icon circles)
-    local function createParticle()
-        local particle = Instance.new("Frame")
-        particle.Size = UDim2.new(0, 20, 0, 20)
-        particle.BackgroundColor3 = accentColor
-        particle.BackgroundTransparency = 0.5
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(1, 0)
-        corner.Parent = particle
-        particle.Position = UDim2.new(math.random(), 0, math.random(), 0)
-        particle.ZIndex = 7
-        particle.Parent = background
-        local tween = TweenService:Create(particle, TweenInfo.new(2, Enum.EasingStyle.Linear), {Position = UDim2.new(particle.Position.X.Scale, 0, -0.1, 0), BackgroundTransparency = 1})
-        tween:Play()
-        tween.Completed:Connect(function() particle:Destroy() end)
+-- Ball Trail
+local function RemoveBallTrail()
+    if ballTrailObj then
+        pcall(function() ballTrailObj:Destroy() end)
+        ballTrailObj = nil
     end
-    task.spawn(function()
-        while background.Parent do
-            createParticle()
-            task.wait(0.2)
-        end
-    end)
-
-    -- Loading container with shadow and floating animation
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(0, 350, 0, 220)
-    container.Position = UDim2.new(0.5, -175, 0.5, -110)
-    container.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    container.BorderSizePixel = 0
-    container.ZIndex = 10
-    local containerCorner = Instance.new("UICorner")
-    containerCorner.CornerRadius = UDim.new(0, 12)
-    containerCorner.Parent = container
-    container.Parent = gui
-
-    -- Add green stroke
-    local containerStroke = Instance.new("UIStroke")
-    containerStroke.Color = accentColor
-    containerStroke.Thickness = 2
-    containerStroke.Parent = container
-
-    -- Floating animation for container
-    local floatOffset = 0
-    RunService.RenderStepped:Connect(function(delta)
-        floatOffset = floatOffset + delta
-        container.Position = UDim2.new(0.5, -175, 0.5, -110 + math.sin(floatOffset * 0.5) * 5)
-    end)
-
-    -- Premium badge with pulsing animation
-    local PremiumBadge = Instance.new("TextLabel")
-    PremiumBadge.Size = UDim2.new(0, UserInputService.MouseEnabled and 150 or 120, 0, UserInputService.MouseEnabled and 35 or 28)
-    PremiumBadge.Position = UDim2.new(0.5, -PremiumBadge.Size.X.Offset / 2, 0, 10)
-    PremiumBadge.BackgroundColor3 = darkBgColor
-    PremiumBadge.BorderColor3 = accentColor
-    PremiumBadge.BorderSizePixel = 0
-    PremiumBadge.Text = "Freemium"
-    PremiumBadge.TextColor3 = Color3.fromRGB(75, 198, 89) -- green color
-    PremiumBadge.TextScaled = true
-    PremiumBadge.Font = Enum.Font.GothamBold
-    PremiumBadge.ZIndex = 11
-    local badgeCorner = Instance.new("UICorner")
-    badgeCorner.CornerRadius = UDim.new(0, 6)
-    badgeCorner.Parent = PremiumBadge
-    local glow = Instance.new("UIStroke")
-    glow.Thickness = 2
-    glow.Color = Color3.fromRGB(75, 198, 89) -- matching green
-    glow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    glow.Parent = PremiumBadge
-    PremiumBadge.Parent = container
-
-    -- Pulsing animation for badge
-    task.spawn(function()
-        while PremiumBadge.Parent do
-            TweenService:Create(PremiumBadge, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0.2}):Play()
-            task.wait(0.5)
-            TweenService:Create(PremiumBadge, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextTransparency = 0}):Play()
-            task.wait(0.5)
-        end
-    end)
-
-    -- Loading text (white)
-    local loadingText = Instance.new("TextLabel")
-    loadingText.Size = UDim2.new(1, -20, 0, 40)
-    loadingText.Position = UDim2.new(0, 10, 0, 45)
-    loadingText.BackgroundTransparency = 1
-    loadingText.Text = "Loading ChaseSddHub"
-    loadingText.TextColor3 = Color3.fromRGB(200, 200, 255)
-    loadingText.TextScaled = true
-    loadingText.Font = Enum.Font.Gotham
-    loadingText.BorderSizePixel = 0
-    loadingText.ZIndex = 11
-    loadingText.Parent = container
-
-    -- Animated dots
-    local function animate_dots()
-        local dots = {".", "..", "..."}
-        local index = 1
-        while loadingText.Parent do
-            loadingText.Text = "Loading ChaseSddHub" .. dots[index]
-            index = index % 3 + 1
-            task.wait(0.5)
-        end
+    if ballRainbowConnection then
+        ballRainbowConnection:Disconnect()
+        ballRainbowConnection = nil
     end
-    task.spawn(animate_dots)
-
-    -- Did You Know facts (displayed on sides)
-    local facts = {
-        "Did you know Premium only costs $10!",
-        "Did you know we support " .. (info.Name or "this game") .. "!",
-        "Did you know our Discord has exclusive updates!",
-        "Did you know ChaseSdd Hub is free to use!",
-        "Did you know we add new games weekly!"
-    }
-    local factLeft = Instance.new("TextLabel")
-    factLeft.Size = UDim2.new(0, 200, 0, 50)
-    factLeft.Position = UDim2.new(0, 50, 0.5, -25)
-    factLeft.BackgroundTransparency = 1
-    factLeft.Text = facts[1]
-    factLeft.TextColor3 = accentColor
-    factLeft.TextScaled = true
-    factLeft.TextWrapped = true
-    factLeft.Font = Enum.Font.Gotham
-    factLeft.BorderSizePixel = 0
-    factLeft.ZIndex = 11
-    factLeft.Parent = gui
-
-    local factRight = Instance.new("TextLabel")
-    factRight.Size = UDim2.new(0, 200, 0, 50)
-    factRight.Position = UDim2.new(1, -250, 0.5, -25)
-    factRight.BackgroundTransparency = 1
-    factRight.Text = ""
-    factRight.TextColor3 = accentColor
-    factRight.TextScaled = true
-    factRight.TextWrapped = true
-    factRight.Font = Enum.Font.Gotham
-    factRight.BorderSizePixel = 0
-    factRight.ZIndex = 11
-    factRight.Parent = gui
-
-    -- Animate facts with floating effect on sides
-    local function animate_facts()
-        local index = 1
-        local isLeft = true
-        while factLeft.Parent and factRight.Parent do
-            local currentFact = facts[index]
-            local targetFact = factLeft
-            if not isLeft then
-                targetFact = factRight
-            end
-
-            -- Reset properties
-            targetFact.TextTransparency = 1
-            targetFact.Text = currentFact
-            targetFact.Position = UDim2.new(targetFact.Position.X.Scale, targetFact.Position.X.Offset, 0.5, -25)
-
-            -- Pop-in animation (fade in)
-            local popInTween = TweenService:Create(targetFact, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                TextTransparency = 0
-            })
-            popInTween:Play()
-            popInTween.Completed:Wait()
-
-            -- Float away animation (move up and fade out)
-            local floatAwayTween = TweenService:Create(targetFact, TweenInfo.new(2, Enum.EasingStyle.Linear), {
-                Position = UDim2.new(targetFact.Position.X.Scale, targetFact.Position.X.Offset, 0.5, -125),
-                TextTransparency = 1
-            })
-            floatAwayTween:Play()
-            floatAwayTween.Completed:Wait()
-
-            index = index % #facts + 1
-            isLeft = not isLeft
-            task.wait(0.5)
-        end
-    end
-    task.spawn(animate_facts)
-
-    -- Animated progress bar (black with purple fill)
-    local progressBar = Instance.new("Frame")
-    progressBar.Size = UDim2.new(0, 310, 0, 8)
-    progressBar.Position = UDim2.new(0, 20, 0, 125)
-    progressBar.BackgroundColor3 = Color3.fromRGB(40, 40, 60)
-    progressBar.BorderSizePixel = 0
-    progressBar.ZIndex = 11
-    local progressBarCorner = Instance.new("UICorner")
-    progressBarCorner.CornerRadius = UDim.new(1, 0)
-    progressBarCorner.Parent = progressBar
-    progressBar.Parent = container
-
-    local progressFill = Instance.new("Frame")
-    progressFill.Size = UDim2.new(0, 0, 1, 0)
-    progressFill.Position = UDim2.new(0, 0, 0, 0)
-    progressFill.BackgroundColor3 = accentColor
-    progressFill.BorderSizePixel = 0
-    progressFill.ZIndex = 12
-    local progressFillCorner = Instance.new("UICorner")
-    progressFillCorner.CornerRadius = UDim.new(1, 0)
-    progressFillCorner.Parent = progressFill
-    progressFill.Parent = progressBar
-
-    -- Animate the progress bar for 10 seconds
-    local tweenInfo = TweenInfo.new(10, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
-    local tween = TweenService:Create(progressFill, tweenInfo, {Size = UDim2.new(1, 0, 1, 0)})
-    tween:Play()
-    
-    -- Auto-remove after 10 seconds
-    local destroyConnection
-    destroyConnection = RunService.Heartbeat:Connect(function()
-        if not gui or not gui.Parent then
-            if destroyConnection then
-                destroyConnection:Disconnect()
-            end
-            return
-        end
-    end)
-    
-    task.delay(10, function()
-        if gui and gui.Parent then
-            local exitTween = TweenService:Create(container, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Size = UDim2.new(0, 0, 0, 0),
-                Position = UDim2.new(0.5, 0, 0.5, 0)
-            })
-            exitTween:Play()
-            exitTween.Completed:Connect(function() gui:Destroy() end)
-        end
-        if destroyConnection then
-            destroyConnection:Disconnect()
-        end
-    end)
-
-    -- Skip loading button (top right corner)
-    local skipButton = Instance.new("TextButton")
-    skipButton.Size = UDim2.new(0, 80, 0, 25)
-    skipButton.Position = UDim2.new(1, -90, 0, 10)
-    skipButton.BackgroundColor3 = darkBgColor
-    skipButton.BorderColor3 = accentColor
-    skipButton.BorderSizePixel = 0
-    skipButton.Text = "SKIP"
-    skipButton.TextColor3 = accentColor
-    skipButton.TextScaled = true
-    skipButton.Font = Enum.Font.Gotham
-    skipButton.ZIndex = 11
-    local skipGlow = Instance.new("UIStroke")
-    skipGlow.Thickness = 2
-    skipGlow.Color = accentColor
-    skipGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    skipGlow.Parent = skipButton
-    local skipCorner = Instance.new("UICorner")
-    skipCorner.CornerRadius = UDim.new(0, 4)
-    skipCorner.Parent = skipButton
-    skipButton.Parent = container
-
-    -- Skip button hover effect
-    skipButton.MouseEnter:Connect(function()
-        TweenService:Create(skipButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = accentColor,
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-    end)
-
-    skipButton.MouseLeave:Connect(function()
-        TweenService:Create(skipButton, TweenInfo.new(0.2), {
-            BackgroundColor3 = darkBgColor,
-            TextColor3 = accentColor
-        }):Play()
-    end)
-
-    -- Skip button functionality
-    skipButton.MouseButton1Click:Connect(function()
-        gui:Destroy()
-    end)
-
-    -- Discord button (black with purple text)
-    local discord_button = Instance.new("TextButton")
-    discord_button.Size = UDim2.new(0, 280, 0, 40)
-    discord_button.Position = UDim2.new(0.5, -140, 0, 160)
-    discord_button.BackgroundColor3 = darkBgColor
-    discord_button.BorderColor3 = accentColor
-    discord_button.BorderSizePixel = 0
-    discord_button.Text = "Join Discord"
-    discord_button.TextColor3 = accentColor
-    discord_button.TextScaled = true
-    discord_button.Font = Enum.Font.Gotham
-    discord_button.ZIndex = 11
-    local discordGlow = Instance.new("UIStroke")
-    discordGlow.Thickness = 2
-    discordGlow.Color = accentColor
-    discordGlow.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    discordGlow.Parent = discord_button
-    local discord_corner = Instance.new("UICorner")
-    discord_corner.CornerRadius = UDim.new(0, 8)
-    discord_corner.Parent = discord_button
-    discord_button.Parent = container
-
-    -- Discord button hover effect
-    discord_button.MouseEnter:Connect(function()
-        TweenService:Create(discord_button, TweenInfo.new(0.2), {
-            BackgroundColor3 = accentColor,
-            TextColor3 = Color3.fromRGB(255, 255, 255)
-        }):Play()
-    end)
-
-    discord_button.MouseLeave:Connect(function()
-        TweenService:Create(discord_button, TweenInfo.new(0.2), {
-            BackgroundColor3 = darkBgColor,
-            TextColor3 = accentColor
-        }):Play()
-    end)
-
-    -- Discord button functionality
-    discord_button.MouseButton1Click:Connect(function()
-        local discord_url = "https://discord.gg/PAy8Ht3SDC"
-        pcall(function()
-            setclipboard(discord_url)
-            discord_button.Text = "Copied!"
-            task.wait(1)
-            discord_button.Text = "Join Discord"
-        end)
-    end)
-
-    -- Smooth entrance animation
-    container.Size = UDim2.new(0, 0, 0, 0)
-    container.Position = UDim2.new(0.5, 0, 0.5, 0)
-    local enterTween = TweenService:Create(container, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 350, 0, 220),
-        Position = UDim2.new(0.5, -175, 0.5, -110)
-    })
-    enterTween:Play()
-
-    return gui
 end
 
--- =========================
--- GUI Creation Function (Not Supported)
--- =========================
-local function create_not_supported_gui()
-    local Players = game:GetService("Players")
-    local UserInputService = game:GetService("UserInputService")
-    local CoreGui = game:GetService("CoreGui")
-    local TweenService = game:GetService("TweenService")
-    
-    -- Clean up any existing GUIs
-    cleanup_old_guis()
+local function AddBallTrail(ball)
+    RemoveBallTrail()
+    if not ball then return end
 
-    -- Define theme colors
-    local accentColor = Color3.fromRGB(75, 198, 89)
-    local darkBgColor = Color3.fromRGB(0, 0, 0)
-    
-    local gui = Instance.new("ScreenGui")
-    gui.Name = "NotSupportedGui"
-    gui.ResetOnSpawn = false
-    gui.DisplayOrder = 10000
-    gui.Parent = CoreGui
+    local attachment0 = Instance.new("Attachment")
+    attachment0.Parent = ball
+    local attachment1 = Instance.new("Attachment")
+    attachment1.Position = Vector3.new(0, 0, -ball.Size.Z / 2)
+    attachment1.Parent = ball
 
-    -- Main frame (clean dark theme)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(0, 400, 0, 240)
-    frame.Position = UDim2.new(0.5, -200, 0.5, -120)
-    frame.BackgroundColor3 = darkBgColor
-    frame.BorderSizePixel = 0
-    frame.ZIndex = 10
-    frame.Parent = gui
+    local trail = Instance.new("Trail")
+    trail.Attachment0 = attachment0
+    trail.Attachment1 = attachment1
+    trail.Lifetime = 0.5
+    trail.MinLength = 0
+    trail.FaceCamera = true
+    trail.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
+    trail.Transparency = NumberSequence.new(0, 1)
+    trail.Parent = ball
+    ballTrailObj = trail
 
-    -- Corner rounding
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 12)
-    corner.Parent = frame
-
-    -- Header with title
-    local header = Instance.new("Frame")
-    header.Size = UDim2.new(1, 0, 0, 40)
-    header.Position = UDim2.new(0, 0, 0, 0)
-    header.BackgroundTransparency = 1
-    header.BorderSizePixel = 0
-    header.ZIndex = 11
-    header.Parent = frame
-
-    -- Title text
-    local title_text = Instance.new("TextLabel")
-    title_text.Size = UDim2.new(1, -60, 1, 0)
-    title_text.Position = UDim2.new(0, 20, 0, 0)
-    title_text.BackgroundTransparency = 1
-    title_text.Text = "GAME NOT SUPPORTED"
-    title_text.TextColor3 = Color3.fromRGB(255, 255, 255)
-    title_text.TextScaled = true
-    title_text.TextWrapped = true
-    title_text.Font = Enum.Font.GothamBold
-    title_text.TextXAlignment = Enum.TextXAlignment.Left
-    title_text.BorderSizePixel = 0
-    title_text.ZIndex = 12
-    title_text.Parent = header
-
-    -- Divider line
-    local divider = Instance.new("Frame")
-    divider.Size = UDim2.new(1, -30, 0, 2)
-    divider.Position = UDim2.new(0, 15, 0, 45)
-    divider.BackgroundColor3 = accentColor
-    divider.BorderSizePixel = 0
-    divider.ZIndex = 11
-    divider.Parent = frame
-
-    -- Message text
-    local message_container = Instance.new("Frame")
-    message_container.Size = UDim2.new(1, -30, 0, 100)
-    message_container.Position = UDim2.new(0, 15, 0, 55)
-    message_container.BackgroundTransparency = 1
-    message_container.BorderSizePixel = 0
-    message_container.ZIndex = 11
-    message_container.Parent = frame
-
-    local message_text = Instance.new("TextLabel")
-    message_text.Size = UDim2.new(1, 0, 1, 0)
-    message_text.Position = UDim2.new(0, 0, 0, 0)
-    message_text.BackgroundTransparency = 1
-    message_text.Text = "This game is not currently supported by ChaseSdd Hub.\n\nJoin our Discord to request support!"
-    message_text.TextColor3 = Color3.fromRGB(255, 255, 255)
-    message_text.TextScaled = true
-    message_text.TextWrapped = true
-    message_text.Font = Enum.Font.Gotham
-    message_text.TextYAlignment = Enum.TextYAlignment.Top
-    message_text.BorderSizePixel = 0
-    message_text.ZIndex = 12
-    message_text.Parent = message_container
-
-    -- Discord button
-    local discord_button = Instance.new("TextButton")
-    discord_button.Size = UDim2.new(0, 220, 0, 45)
-    discord_button.Position = UDim2.new(0.5, -110, 1, -60)
-    discord_button.Text = "Join Discord"
-    discord_button.BackgroundColor3 = darkBgColor
-    discord_button.BorderColor3 = accentColor
-    discord_button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    discord_button.TextScaled = true
-    discord_button.Font = Enum.Font.GothamSemibold
-    discord_button.BorderSizePixel = 0
-    discord_button.ZIndex = 11
-    discord_button.Parent = frame
-
-    local discord_corner = Instance.new("UICorner")
-    discord_corner.CornerRadius = UDim.new(0, 8)
-    discord_corner.Parent = discord_button
-
-    -- Close button
-    local close_button = Instance.new("TextButton")
-    close_button.Size = UDim2.new(0, 30, 0, 30)
-    close_button.Position = UDim2.new(1, -35, 0, 5)
-    close_button.BackgroundColor3 = darkBgColor
-    close_button.BorderColor3 = accentColor
-    close_button.Text = "X"
-    close_button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    close_button.TextScaled = true
-    close_button.Font = Enum.Font.GothamBold
-    close_button.BorderSizePixel = 0
-    close_button.ZIndex = 12
-    close_button.Parent = frame
-
-    local button_corner = Instance.new("UICorner")
-    button_corner.CornerRadius = UDim.new(0, 6)
-    button_corner.Parent = close_button
-
-    -- Hover effects
-    local function setupHoverEffect(button, normalColor, hoverColor)
-        button.MouseEnter:Connect(function()
-            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = hoverColor}):Play()
-        end)
-        button.MouseLeave:Connect(function()
-            TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = normalColor}):Play()
+    if SETTINGS.BallRainbow then
+        ballRainbowConnection = RunService.RenderStepped:Connect(function()
+            rainbowHue = (rainbowHue + 0.01) % 1
+            local c1 = Color3.fromHSV(rainbowHue, 1, 1)
+            local c2 = Color3.fromHSV((rainbowHue + 0.5) % 1, 1, 1)
+            trail.Color = ColorSequence.new(c1, c2)
+            if ball and ball.Parent then
+                ball.Color = c1
+            end
         end)
     end
+end
 
-    setupHoverEffect(discord_button, darkBgColor, accentColor)
-    setupHoverEffect(close_button, darkBgColor, accentColor)
+-- Watch for ball changes
+if BallsFolder then
+    BallsFolder.ChildAdded:Connect(function(child)
+        task.wait(0.1)
+        local ball = GetBall()
+        if ball and (SETTINGS.BallTrail or SETTINGS.BallRainbow) then
+            AddBallTrail(ball)
+        end
+    end)
+    BallsFolder.ChildRemoved:Connect(function()
+        RemoveBallTrail()
+    end)
+end
 
-    -- Discord button functionality
-    discord_button.MouseButton1Click:Connect(function()
-        local discord_url = "https://discord.gg/PAy8Ht3SDC"
-        pcall(function()
-            setclipboard(discord_url)
-            local originalText = discord_button.Text
-            discord_button.Text = "COPIED!"
-            task.wait(1.5)
-            discord_button.Text = originalText
+-- Spam indicator
+local spamIndicator = Drawing.new("Text")
+spamIndicator.Visible = false
+spamIndicator.Size = 20
+spamIndicator.Font = 2
+spamIndicator.Center = true
+spamIndicator.Outline = true
+spamIndicator.OutlineColor = Color3.fromRGB(0, 0, 0)
+spamIndicator.Color = Color3.fromRGB(255, 50, 255)
+spamIndicator.Text = "[ SPAM ACTIVE ]"
+
+-- Ball Speed HUD
+local velocityGui = Instance.new("ScreenGui")
+velocityGui.Name = "DihHubVelocity"
+velocityGui.ResetOnSpawn = false
+velocityGui.Parent = Player.PlayerGui
+
+local velocityFrame = Instance.new("Frame")
+velocityFrame.Size = UDim2.new(0, 200, 0, 80)
+velocityFrame.Position = UDim2.new(1, -220, 0.5, -40)
+velocityFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+velocityFrame.BackgroundTransparency = 0.3
+velocityFrame.BorderSizePixel = 0
+velocityFrame.Parent = velocityGui
+Instance.new("UICorner", velocityFrame).CornerRadius = UDim.new(0, 8)
+
+local hudTitle = Instance.new("TextLabel")
+hudTitle.Size = UDim2.new(1, 0, 0.4, 0)
+hudTitle.BackgroundTransparency = 1
+hudTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
+hudTitle.Font = Enum.Font.GothamBold
+hudTitle.TextSize = 14
+hudTitle.Text = "dih hub | ball speed"
+hudTitle.Parent = velocityFrame
+
+local velocityLabel = Instance.new("TextLabel")
+velocityLabel.Size = UDim2.new(1, 0, 0.6, 0)
+velocityLabel.Position = UDim2.new(0, 0, 0.4, 0)
+velocityLabel.BackgroundTransparency = 1
+velocityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+velocityLabel.Font = Enum.Font.GothamBold
+velocityLabel.TextSize = 18
+velocityLabel.Text = "0 studs/s"
+velocityLabel.Parent = velocityFrame
+
+-- Auto spam
+local function StartSpam()
+    if isSpamming then return end
+    isSpamming = true
+    task.spawn(function()
+        while isSpamming and SETTINGS.AutoSpam do
+            FireClick()
+            task.wait(SETTINGS.SpamInterval)
+        end
+        isSpamming = false
+    end)
+end
+
+local function StopSpam()
+    isSpamming = false
+end
+
+-- Ball speed HUD update
+RunService.RenderStepped:Connect(function()
+    local ball = GetBall()
+    if ball then
+        local ok, speed = pcall(function()
+            return math.floor(ball.AssemblyLinearVelocity.Magnitude)
         end)
-    end)
+        if ok and speed then
+            velocityLabel.Text = tostring(speed) .. " studs/s"
+            if speed > 150 then
+                velocityLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
+            elseif speed > 80 then
+                velocityLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
+            else
+                velocityLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
+            end
+        end
+    else
+        velocityLabel.Text = "no ball"
+        velocityLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end
+end)
 
-    -- Close button functionality
-    close_button.MouseButton1Click:Connect(function()
-        gui:Destroy()
-    end)
-
-    -- Allow dragging the GUI
-    local dragging, dragInput, dragStart, startPos
-    local function update_input(input)
-        local delta = input.Position - dragStart
-        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+-- Main parry loop
+RunService.PreSimulation:Connect(function(delta)
+    if not SETTINGS.AutoParry then
+        circlepart.Transparency = 1
+        spamIndicator.Visible = false
+        StopSpam()
+        return
     end
 
-    frame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
+    local Char = Player.Character
+    local Root = Char and Char:FindFirstChild("HumanoidRootPart")
+    if not Root then
+        circlepart.Transparency = 1
+        StopSpam()
+        return
+    end
+
+    local Ball = GetBall()
+    if not Ball then
+        circlepart.Transparency = 1
+        StopSpam()
+        return
+    end
+
+    local Velocity, Speed
+    local ok = pcall(function()
+        Velocity = Ball.AssemblyLinearVelocity
+        Speed = Velocity.Magnitude
+    end)
+    if not ok or not Velocity or not Speed then return end
+    if Speed < 1 then return end
+
+    local Ping = GetPing()
+    UpdateAdaptivePing(Ping)
+
+    local PlayerPos = Root.Position
+    local BallPos = Ball.Position
+
+    local PredictedPos = GetPredictedPosition(Ball, Velocity, Ping)
+    lastBallVel = Velocity
+
+    local Distance = (PlayerPos - PredictedPos).Magnitude
+    local RealDistance = (PlayerPos - BallPos).Magnitude
+
+    local directionToPlayer = (PlayerPos - BallPos).Unit
+    local dot = directionToPlayer:Dot(Velocity.Unit)
+    local approachSpeed = dot * Speed
+
+    if approachSpeed <= 0 then
+        LastBallHit = nil
+        StopSpam()
+    end
+
+    local Targeted = IsTargeted()
+    local IsClashing = Targeted and RealDistance <= 22
+
+    -- Auto spam
+    local shouldSpam = SETTINGS.AutoSpam
+        and Targeted
+        and dot > 0
+        and Speed >= SETTINGS.SpamSpeedThreshold
+        and RealDistance <= SETTINGS.SpamDistance
+
+    if shouldSpam then
+        StartSpam()
+    else
+        StopSpam()
+    end
+
+    -- Spam indicator
+    local camera = workspace.CurrentCamera
+    spamIndicator.Position = Vector2.new(camera.ViewportSize.X / 2, 50)
+    spamIndicator.Visible = shouldSpam and SETTINGS.Visuals
+
+    -- Circle
+    frameCounter = frameCounter + 1
+    if frameCounter % 2 == 0 then
+        local state = isSpamming and "spam"
+            or (IsClashing and "clash")
+            or (Targeted and "target")
+            or "neutral"
+        UpdateCircle(Root, state)
+    end
+
+    if not Targeted or dot <= 0 then return end
+
+    local TimeToHit = RealDistance / math.max(approachSpeed, 1)
+    local PredictionThreshold = SETTINGS.DistanceToParry / 10 + (Ping * adaptivePingOffset)
+
+    if Speed > 150 then
+        PredictionThreshold = PredictionThreshold * 1.2
+    elseif Speed > 100 then
+        PredictionThreshold = PredictionThreshold * 1.1
+    end
+
+    if TimeToHit <= PredictionThreshold then
+        SendClick(Ball)
+    end
+end)
+
+Player.CharacterAdded:Connect(function()
+    LastBallHit = nil
+    IsParrying = false
+    adaptivePingOffset = SETTINGS.PingBasedOffset
+    pingHistory = {}
+    lastBallVel = Vector3.zero
+    circlepart.Transparency = 1
+    spamIndicator.Visible = false
+    StopSpam()
+end)
+
+-- GUI
+local KeybindList = Library:KeybindList({Name = "dih hub"})
+local Window = Library:Window({Logo = "rbxassetid://77749228793011"})
+
+local CombatTab = Window:Page({Icon = "rbxassetid://108020878442937"})
+local SpamTab = Window:Page({Icon = "rbxassetid://10709781460"})
+local VisualsTab = Window:Page({Icon = "rbxassetid://10723346959"})
+local SettingsTab = Window:Page({Icon = "rbxassetid://10734951847"})
+
+-- ============ COMBAT TAB ============
+local CombatLeft = CombatTab:Section({Name = "Combat", Side = 1})
+local CombatRight = CombatTab:Section({Name = "Settings", Side = 2})
+
+local AutoParryToggle = CombatLeft:Toggle({
+    Name = "Auto Parry",
+    Flag = "AutoParry",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.AutoParry = v
+        if not v then
+            circlepart.Transparency = 1
+            spamIndicator.Visible = false
+            StopSpam()
+        end
+    end
+})
+
+AutoParryToggle:Keybind({
+    Name = "Auto Parry",
+    Flag = "AutoParryBind",
+    Default = Enum.KeyCode.L,
+    Mode = "Toggle",
+    Callback = function(v)
+        SETTINGS.AutoParry = v
+        if not v then
+            circlepart.Transparency = 1
+            StopSpam()
+        end
+    end
+})
+
+local AutoSpamToggle = CombatLeft:Toggle({
+    Name = "Auto Spam",
+    Flag = "AutoSpam",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.AutoSpam = v
+        if not v then StopSpam() end
+    end
+})
+
+AutoSpamToggle:Keybind({
+    Name = "Auto Spam",
+    Flag = "AutoSpamBind",
+    Default = Enum.KeyCode.H,
+    Mode = "Toggle",
+    Callback = function(v)
+        SETTINGS.AutoSpam = v
+        if not v then StopSpam() end
+    end
+})
+
+CombatLeft:Label({Name = "Manual Spam"}):Keybind({
+    Name = "Manual Spam",
+    Flag = "ManualSpamBind",
+    Default = Enum.KeyCode.G,
+    Mode = "Hold",
+    Callback = function(v)
+        SETTINGS.ManualSpam = v
+        if v then
+            task.spawn(function()
+                while SETTINGS.ManualSpam do
+                    FireClick()
+                    task.wait(SETTINGS.SpamInterval)
                 end
             end)
         end
-    end)
-
-    frame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and input == dragInput then
-            update_input(input)
-        end
-    end)
-
-    -- Animate appearance
-    frame.Size = UDim2.new(0, 0, 0, 0)
-    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    TweenService:Create(frame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-        Size = UDim2.new(0, 400, 0, 240),
-        Position = UDim2.new(0.5, -200, 0.5, -120)
-    }):Play()
-
-    return gui
-end
-
--- =========================
--- Title-based routing
--- =========================
-local matched = false
-if title ~= "" then
-    if title:find("blade%p*%s*ball") or title:find("bladeball") then
-        local loading_gui = show_premium_loading()
-        run_remote(URLS["bladeball"], "Blade Ball")
-        matched = true
-    elseif title:find("%f[%w]99%f[%W]%s*nights") or title:find("99%s*nights") or title:find("99nights") then
-        local loading_gui = show_premium_loading()
-        run_remote(URLS["99 nights"], "99 Nights")
-        matched = true
-    elseif title:find("basketball%s*legends") then
-        local loading_gui = show_premium_loading()
-        run_remote(URLS["basketball legends"], "Basketball Legends")
-        matched = true
-    elseif title:find("build%s*a%s*boat") or title:find("buildaboat") or title:find("babft") or title:find("for treasure") then
-        local loading_gui = show_premium_loading()
-        run_remote(URLS["build a boat"], "Build A Boat")
-        matched = true
-    elseif title:find("steal%s*a%s*brainrot") or title:find("stealabrainrot") then
-        local loading_gui = show_premium_loading()
-        run_remote(URLS["steal a brainrot"], "Steal A Brainrot")
-        matched = true
-    elseif title:find("fish%p*%s*it") or title:find("fishit") then
-        local loading_gui = show_premium_loading()
-        run_remote(URLS["fish it"], "Fish It!")
-        matched = true
-    elseif title:find("anime%s*eternal") or title:find("animeeternal") then
-        local loading_gui = show_premium_loading()
-        run_remote(URLS["anime eternal"], "Anime Eternal")
-        matched = true
     end
-end
+})
 
--- =========================
--- PlaceId fallback (only if title detection failed)
--- =========================
-if not matched then
-    local url = PLACEID_URLS[game.PlaceId]
-    if url then
-        local loading_gui = show_premium_loading()
-        run_remote(url, "PlaceId=" .. tostring(game.PlaceId))
-        matched = true
+CombatLeft:Toggle({
+    Name = "Auto Hide if Miss",
+    Flag = "AutoHideMiss",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.AutoHideIfMiss = v
     end
-end
+})
 
--- =========================
--- Show GUI if no script matched
--- =========================
-if not matched then
-    create_not_supported_gui()
-end
+-- Settings right
+CombatRight:Toggle({
+    Name = "Auto Predict Range",
+    Flag = "PredictPosition",
+    Default = true,
+    Callback = function(v)
+        SETTINGS.PredictPosition = v
+    end
+})
+
+CombatRight:Slider({
+    Name = "Base Range",
+    Flag = "DistanceToParry",
+    Min = 1,
+    Max = 50,
+    Default = 20,
+    Decimals = 1,
+    Callback = function(v)
+        SETTINGS.DistanceToParry = v
+    end
+})
+
+CombatRight:Toggle({
+    Name = "Adaptive Ping",
+    Flag = "AdaptivePing",
+    Default = true,
+    Callback = function(v)
+        SETTINGS.AdaptivePing = v
+    end
+})
+
+CombatRight:Dropdown({
+    Name = "Curve Type",
+    Flag = "CurveMode",
+    Default = "Camera",
+    Items = {"Camera", "Random", "Accelerated", "Backwards", "Slow", "High"},
+    Callback = function(v)
+        SETTINGS.CurveMode = v
+    end
+})
+
+-- ============ SPAM TAB ============
+local SpamLeft = SpamTab:Section({Name = "Auto Spam", Side = 1})
+local SpamRight = SpamTab:Section({Name = "Manual Spam", Side = 2})
+
+SpamLeft:Slider({
+    Name = "Spam Interval",
+    Flag = "SpamInterval",
+    Min = 0.001,
+    Max = 0.1,
+    Default = 0.008,
+    Decimals = 0.001,
+    Suffix = "s",
+    Callback = function(v) SETTINGS.SpamInterval = v end
+})
+
+SpamLeft:Slider({
+    Name = "Speed Threshold",
+    Flag = "SpamSpeed",
+    Min = 50,
+    Max = 300,
+    Default = 120,
+    Suffix = " s/s",
+    Callback = function(v) SETTINGS.SpamSpeedThreshold = v end
+})
+
+SpamLeft:Slider({
+    Name = "Spam Distance",
+    Flag = "SpamDistance",
+    Min = 5,
+    Max = 100,
+    Default = 20,
+    Suffix = " studs",
+    Callback = function(v) SETTINGS.SpamDistance = v end
+})
+
+SpamRight:Label({Name = "Manual Spam Key: G (Hold)"})
+
+SpamRight:Slider({
+    Name = "Manual Spam Interval",
+    Flag = "ManualSpamInterval",
+    Min = 0.001,
+    Max = 0.1,
+    Default = 0.008,
+    Decimals = 0.001,
+    Suffix = "s",
+    Callback = function(v) SETTINGS.SpamInterval = v end
+})
+
+-- ============ VISUALS TAB ============
+local VisualsLeft = VisualsTab:Section({Name = "Visualizer", Side = 1})
+local VisualsRight = VisualsTab:Section({Name = "Ball Effects", Side = 2})
+
+VisualsLeft:Toggle({
+    Name = "Circle Visualizer",
+    Flag = "CircleVisuals",
+    Default = true,
+    Callback = function(v)
+        SETTINGS.Visuals = v
+        if not v then
+            circlepart.Transparency = 1
+            spamIndicator.Visible = false
+        end
+    end
+})
+
+VisualsLeft:Label({Name = "Circle Color"}):Colorpicker({
+    Flag = "CircleColor",
+    Default = Color3.fromRGB(0, 255, 0),
+    Callback = function(color)
+        SETTINGS.CircleColor = color
+        circlepart.Color = color
+    end
+})
+
+VisualsLeft:Slider({
+    Name = "Circle Size",
+    Flag = "CircleSize",
+    Min = 5,
+    Max = 50,
+    Default = 20,
+    Decimals = 1,
+    Callback = function(v)
+        SETTINGS.CircleSize = v
+        circlepart.Size = Vector3.new(0.1, v, v)
+    end
+})
+
+VisualsLeft:Slider({
+    Name = "Circle Transparency",
+    Flag = "CircleTransparency",
+    Min = 0,
+    Max = 0.9,
+    Default = 0.5,
+    Decimals = 0.1,
+    Callback = function(v)
+        SETTINGS.CircleTransparency = v
+    end
+})
+
+VisualsLeft:Toggle({
+    Name = "Ball Speed HUD",
+    Flag = "BallSpeedHUD",
+    Default = true,
+    Callback = function(v)
+        velocityFrame.Visible = v
+    end
+})
+
+-- Ball effects
+local BallTrailToggle = VisualsRight:Toggle({
+    Name = "Ball Trail",
+    Flag = "BallTrail",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.BallTrail = v
+        if v then
+            local ball = GetBall()
+            if ball then AddBallTrail(ball) end
+        else
+            RemoveBallTrail()
+        end
+    end
+})
+
+BallTrailToggle:Colorpicker({
+    Flag = "TrailColor1",
+    Default = Color3.fromRGB(255, 0, 0),
+    Callback = function(color)
+        SETTINGS.TrailColor1 = color
+        if ballTrailObj then
+            ballTrailObj.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
+        end
+    end
+})
+
+BallTrailToggle:Colorpicker({
+    Flag = "TrailColor2",
+    Default = Color3.fromRGB(0, 0, 255),
+    Callback = function(color)
+        SETTINGS.TrailColor2 = color
+        if ballTrailObj then
+            ballTrailObj.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
+        end
+    end
+})
+
+VisualsRight:Toggle({
+    Name = "Ball Rainbow",
+    Flag = "BallRainbow",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.BallRainbow = v
+        if v then
+            local ball = GetBall()
+            if ball then AddBallTrail(ball) end
+        else
+            RemoveBallTrail()
+            -- Reset ball color
+            local ball = GetBall()
+            if ball then
+                pcall(function() ball.Color = Color3.fromRGB(255, 255, 255) end)
+            end
+            if SETTINGS.BallTrail then
+                local b = GetBall()
+                if b then AddBallTrail(b) end
+            end
+        end
+    end
+})
+
+-- ============ SETTINGS TAB ============
+local SettingsLeft = SettingsTab:Section({Name = "Menu", Side = 1})
+
+SettingsLeft:Label({Name = "Toggle UI"}):Keybind({
+    Name = "Toggle UI",
+    Flag = "UIKeybind",
+    Default = Enum.KeyCode.RightControl,
+    Mode = "Toggle",
+    Callback = function(v)
+        Library.MenuKeybind = tostring(Library.Flags["UIKeybind"] and Library.Flags["UIKeybind"].Key or Enum.KeyCode.RightControl)
+    end
+})
+
+Library:Notification("dih hub loaded!", 5, Color3.fromRGB(78, 95, 255))
