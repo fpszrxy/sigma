@@ -1,25 +1,21 @@
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/sametexe001/sametlibs/refs/heads/main/nexonix/Library.lua"))()
+getgenv().Aeloe = {
+    ["AutoParry"] = true,
+    ["PingBased"] = true,
+    ["PingBasedOffset"] = 1.95, 
+    ["DistanceToParry"] = 0.65,
+    ["EmergencyRadius"] = 10,
+    ["ClashDistance"] = 22,
+    ["ClashSpeed"] = 0.01,
+    ["NormalSpeed"] = 0.05,
+    ["Visuals"] = true
+}
 
--- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local Player = Players.LocalPlayer
-
--- Settings
-getgenv().Aeloe = {
-    AutoParry = false,
-    PingBased = true,
-    PingBasedOffset = 1.95,
-    DistanceToParry = 0.65,
-    EmergencyRadius = 10,
-    ClashDistance = 22,
-    ClashSpeed = 0.01,
-    NormalSpeed = 0.05,
-    Visuals = true,
-}
 
 local SETTINGS = getgenv().Aeloe
 local LastClick = 0
@@ -28,26 +24,27 @@ local IsParrying = false
 local frameCounter = 0
 local BallsFolder = workspace:FindFirstChild("Balls") or workspace:WaitForChild("Balls", 5)
 
-local NetworkStats = Stats:FindFirstChild("Network")
-    and Stats.Network:FindFirstChild("ServerStatsItem")
+local NetworkStats = Stats:FindFirstChild("Network") 
+    and Stats.Network:FindFirstChild("ServerStatsItem") 
     and Stats.Network.ServerStatsItem:FindFirstChild("Data Ping")
 
 local r, m
-local function InitVisuals()
-    local old = workspace:FindFirstChild("AeloeSmartCircle")
-    if old then old:Destroy() end
+if SETTINGS.Visuals then
     r = Instance.new("Part")
     r.Name = "AeloeSmartCircle"
     r.Parent = workspace
-    r.Anchored = true
-    r.CanCollide = false
-    r.Transparency = 1
-    r.Material = Enum.Material.Neon
+    r.Anchored, r.CanCollide = true, false
+    r.Transparency, r.Material = 0.3, Enum.Material.Neon
     m = Instance.new("SpecialMesh", r)
     m.MeshId = "rbxassetid://3270017"
 end
 
-InitVisuals()
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.L then
+        SETTINGS.AutoParry = not SETTINGS.AutoParry
+    end
+end)
 
 local function GetBall()
     if not BallsFolder then return nil end
@@ -65,7 +62,7 @@ end
 
 local function IsTargeted()
     if not Player.Character then return false end
-    return Player.Character:GetAttribute("Targeted") == true
+    return Player.Character:GetAttribute("Targeted") == true 
         or Player.Character:FindFirstChild("Highlight") ~= nil
 end
 
@@ -73,22 +70,26 @@ local function SendClick(isClashing, ball)
     if not SETTINGS.AutoParry or IsParrying then return end
     local now = tick()
     local cd = isClashing and SETTINGS.ClashSpeed or SETTINGS.NormalSpeed
+    
     if not isClashing and LastBallHit == ball and (now - LastClick) < 0.5 then return end
     if (now - LastClick) < cd then return end
+    
     IsParrying = true
     LastClick = now
     LastBallHit = ball
+    
     VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
     VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    
     task.delay(cd, function() IsParrying = false end)
 end
 
 local function UpdateVisuals(root, distance, state)
     if not SETTINGS.Visuals or not r then return end
-    task.wait(0.01)
     r.CFrame = root.CFrame * CFrame.new(0, -2.6, 0) * CFrame.Angles(math.rad(90), 0, 0)
     local targetSize = math.clamp(distance * 0.8, 5, 65)
     m.Scale = m.Scale:Lerp(Vector3.new(targetSize, targetSize, 0.5), 0.5)
+
     if state == "clash" then
         r.Color = Color3.fromRGB(255, 0, 0)
         r.Transparency = 0.05
@@ -102,16 +103,16 @@ local function UpdateVisuals(root, distance, state)
 end
 
 RunService.PostSimulation:Connect(function()
-    if not SETTINGS.AutoParry then
+    if not SETTINGS.AutoParry then 
         if r then r.Transparency = 1 end
-        return
+        return 
     end
-
+    
     local Char = Player.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
-    if not Root then
+    if not Root then 
         if r then r.Transparency = 1 end
-        return
+        return 
     end
 
     local Ball = GetBall()
@@ -124,19 +125,19 @@ RunService.PostSimulation:Connect(function()
     local Velocity = Ball.AssemblyLinearVelocity
     local Speed = Velocity.Magnitude
     local Distance = (PlayerPos - BallPos).Magnitude
-
+    
     local directionToPlayer = (PlayerPos - BallPos).Unit
     local velocityDirection = Velocity.Unit
     local dot = directionToPlayer:Dot(velocityDirection)
 
-    if dot < 0 then LastBallHit = nil end
+    if dot < 0 then LastBallHit = nil end 
 
     local Targeted = IsTargeted()
     local IsClashing = Targeted and Distance <= SETTINGS.ClashDistance
-
+    
     frameCounter = frameCounter + 1
-    if r and frameCounter % 2 == 0 then
-        r.Transparency = 0.3
+    if r and frameCounter % 2 == 0 then 
+        r.Transparency = 0.3 
         UpdateVisuals(Root, Distance, IsClashing and "clash" or (Targeted and "target" or "neutral"))
     end
 
@@ -146,9 +147,11 @@ RunService.PostSimulation:Connect(function()
         local Ping = (NetworkStats and NetworkStats.Value / 1000) or 0.04
         local TimeToHit = Distance / math.max(Speed, 1)
         local PredictionThreshold = SETTINGS.DistanceToParry + (Ping * SETTINGS.PingBasedOffset)
+        
         if Speed > 150 then
             PredictionThreshold = PredictionThreshold * 1.15
         end
+
         if TimeToHit <= PredictionThreshold or Distance <= SETTINGS.EmergencyRadius then
             SendClick(false, Ball)
         end
@@ -158,145 +161,4 @@ end)
 Player.CharacterAdded:Connect(function()
     LastBallHit = nil
     IsParrying = false
-    if r then r.Transparency = 1 end
 end)
-
--- GUI
-local KeybindList = Library:KeybindList({Name = "dih hub"})
-local Window = Library:Window({Logo = "rbxassetid://77749228793011"})
-
-local CombatTab = Window:Page({Icon = "rbxassetid://108020878442937"})
-local VisualsTab = Window:Page({Icon = "rbxassetid://10723346959"})
-local SettingsTab = Window:Page({Icon = "rbxassetid://10734951847"})
-
--- COMBAT
-local CombatLeft = CombatTab:Section({Name = "Combat", Side = 1})
-local CombatRight = CombatTab:Section({Name = "Settings", Side = 2})
-
-local AutoParryToggle = CombatLeft:Toggle({
-    Name = "Auto Parry",
-    Flag = "AutoParry",
-    Default = false,
-    Callback = function(v)
-        SETTINGS.AutoParry = v
-        if not v and r then r.Transparency = 1 end
-    end
-})
-
-AutoParryToggle:Keybind({
-    Name = "Auto Parry",
-    Flag = "AutoParryBind",
-    Default = Enum.KeyCode.L,
-    Mode = "Toggle",
-    Callback = function(v)
-        SETTINGS.AutoParry = v
-        if not v and r then r.Transparency = 1 end
-    end
-})
-
-CombatRight:Slider({
-    Name = "Distance To Parry",
-    Flag = "DistanceToParry",
-    Min = 0.1,
-    Max = 3,
-    Default = 0.65,
-    Decimals = 0.01,
-    Callback = function(v)
-        SETTINGS.DistanceToParry = v
-    end
-})
-
-CombatRight:Slider({
-    Name = "Ping Offset",
-    Flag = "PingOffset",
-    Min = 0.5,
-    Max = 5,
-    Default = 1.95,
-    Decimals = 0.01,
-    Callback = function(v)
-        SETTINGS.PingBasedOffset = v
-    end
-})
-
-CombatRight:Slider({
-    Name = "Emergency Radius",
-    Flag = "EmergencyRadius",
-    Min = 1,
-    Max = 30,
-    Default = 10,
-    Suffix = " studs",
-    Callback = function(v)
-        SETTINGS.EmergencyRadius = v
-    end
-})
-
-CombatRight:Slider({
-    Name = "Clash Distance",
-    Flag = "ClashDistance",
-    Min = 5,
-    Max = 50,
-    Default = 22,
-    Suffix = " studs",
-    Callback = function(v)
-        SETTINGS.ClashDistance = v
-    end
-})
-
--- VISUALS
-local VisualsLeft = VisualsTab:Section({Name = "Visualizer", Side = 1})
-
-local VisualsToggle = VisualsLeft:Toggle({
-    Name = "Circle Visualizer",
-    Flag = "CircleVisuals",
-    Default = true,
-    Callback = function(v)
-        SETTINGS.Visuals = v
-        if not v and r then r.Transparency = 1 end
-        if v and not r then InitVisuals() end
-    end
-})
-
-VisualsToggle:Keybind({
-    Name = "Circle Visualizer",
-    Flag = "Visualsbind",
-    Default = Enum.KeyCode.V,
-    Mode = "Toggle",
-    Callback = function(v)
-        SETTINGS.Visuals = v
-        if not v and r then r.Transparency = 1 end
-    end
-})
-
--- SETTINGS
-local SettingsLeft = SettingsTab:Section({Name = "Menu", Side = 1})
-
-SettingsLeft:Label({Name = "Toggle UI"}):Keybind({
-    Name = "Toggle UI",
-    Flag = "UIKeybind",
-    Default = Enum.KeyCode.RightControl,
-    Mode = "Toggle",
-    Callback = function(v)
-        Library.MenuKeybind = Library.Flags["UIKeybind"] and tostring(Library.Flags["UIKeybind"].Key) or tostring(Enum.KeyCode.RightControl)
-    end
-})
-
--- Watermark
-local Watermark = Window:Watermark({Name = "dih hub", Logo = "rbxassetid://77749228793011"})
-Watermark:AddItem("rbxassetid://79077177539456", Player.Name)
-
-local FPSText = Watermark:AddItem("rbxassetid://81108100527616", "FPS: 60")
-local FrameTimer = tick()
-local FPS = 60
-local FrameCount = 0
-
-Library:Connect(RunService.RenderStepped, function()
-    FrameCount = FrameCount + 1
-    if tick() - FrameTimer >= 1 then
-        FPS = FrameCount
-        FrameCount = 0
-        FrameTimer = tick()
-    end
-    FPSText.Instance.Text = "FPS: " .. FPS
-end)
-
-Library:Notification("dih hub loaded!", 5, Color3.fromRGB(78, 95, 255))
