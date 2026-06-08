@@ -13,14 +13,15 @@ local Player = Players.LocalPlayer
 getgenv().Aeloe = {
     AutoParry = false,
     PingBasedOffset = 1.95,
-    DistanceToParry = 2.0,
+    DistanceToParry = 20,
     PredictPosition = true,
     AdaptivePing = true,
     AutoSpam = false,
     ManualSpam = false,
     SpamSpeedThreshold = 120,
     SpamDistance = 20,
-    SpamInterval = 0.008,
+    SpamInterval = 0.05,
+    ManualSpamInterval = 0.05,
     Visuals = true,
     AutoHideIfMiss = false,
     CurveMode = "Camera",
@@ -31,6 +32,7 @@ getgenv().Aeloe = {
     CircleColor = Color3.fromRGB(0, 255, 0),
     CircleTransparency = 0.5,
     CircleSize = 20,
+    UseKeyParry = false, -- use F key instead of mouse click
 }
 
 local SETTINGS = getgenv().Aeloe
@@ -46,6 +48,7 @@ local isSpamming = false
 local rainbowHue = 0
 local ballTrailObj = nil
 local ballRainbowConnection = nil
+local parryFrameSkip = 0
 
 local BallsFolder = workspace:FindFirstChild("Balls") or workspace:WaitForChild("Balls", 5)
 
@@ -104,28 +107,31 @@ local function IsTargeted()
     return false
 end
 
+-- Fire click with optional F key mode
 local function FireClick()
     pcall(function()
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        if SETTINGS.UseKeyParry then
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            task.wait(0.016)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+        else
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+        end
     end)
 end
 
 -- Curve mode prediction
 local function GetPredictedPosition(ball, velocity, ping)
     if not SETTINGS.PredictPosition then return ball.Position end
-    local char = Player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
     local mode = SETTINGS.CurveMode
-
     local gravity = workspace.Gravity
     local basePos = ball.Position
         + (velocity * ping)
         + Vector3.new(0, -0.5 * gravity * ping * ping, 0)
 
     if mode == "Camera" then
-        local camera = workspace.CurrentCamera
-        local camDir = camera.CFrame.LookVector
+        local camDir = workspace.CurrentCamera.CFrame.LookVector
         return basePos + camDir * 0.5
     elseif mode == "Random" then
         return basePos + Vector3.new(
@@ -134,8 +140,8 @@ local function GetPredictedPosition(ball, velocity, ping)
             math.random(-2, 2) * 0.1
         )
     elseif mode == "Accelerated" then
-        local BallAcceleration = (velocity - lastBallVel) / math.max(ping, 0.001)
-        return basePos + (BallAcceleration * 0.5 * ping * ping)
+        local accel = (velocity - lastBallVel) / math.max(ping, 0.001)
+        return basePos + (accel * 0.5 * ping * ping)
     elseif mode == "Backwards" then
         return basePos - velocity * ping * 0.3
     elseif mode == "Slow" then
@@ -150,15 +156,19 @@ local function SendClick(ball)
     if not SETTINGS.AutoParry or IsParrying then return end
     local now = tick()
     if LastBallHit == ball and (now - LastClick) < 0.5 then return end
-    if (now - LastClick) < 0.05 then return end
+    if (now - LastClick) < 0.1 then return end -- increased from 0.05
     IsParrying = true
     LastClick = now
     LastBallHit = ball
     FireClick()
-    task.delay(0.05, function() IsParrying = false end)
+    task.delay(0.1, function() IsParrying = false end)
 end
 
--- 3D World Circle
+-- 3D World Circle - parented to camera folder to avoid server detection
+local localFolder = Instance.new("Folder")
+localFolder.Name = "DihHubLocal"
+localFolder.Parent = workspace.CurrentCamera
+
 local circlepart = Instance.new("Part")
 circlepart.Name = "ParryCircle"
 circlepart.Anchored = true
@@ -171,7 +181,7 @@ circlepart.Shape = Enum.PartType.Cylinder
 circlepart.Material = Enum.Material.Neon
 circlepart.Color = SETTINGS.CircleColor
 circlepart.Transparency = 1
-circlepart.Parent = workspace
+circlepart.Parent = workspace -- keep in workspace for 3D rendering but hide when off
 
 local function UpdateCircle(root, state)
     if not SETTINGS.Visuals or not root then
@@ -235,17 +245,21 @@ local function AddBallTrail(ball)
             rainbowHue = (rainbowHue + 0.01) % 1
             local c1 = Color3.fromHSV(rainbowHue, 1, 1)
             local c2 = Color3.fromHSV((rainbowHue + 0.5) % 1, 1, 1)
-            trail.Color = ColorSequence.new(c1, c2)
-            if ball and ball.Parent then
-                ball.Color = c1
+            if trail and trail.Parent then
+                trail.Color = ColorSequence.new(c1, c2)
             end
+            -- safe ball color change
+            pcall(function()
+                if ball and ball.Parent and ball.Parent == BallsFolder then
+                    ball.Color = c1
+                end
+            end)
         end)
     end
 end
 
--- Watch for ball changes
 if BallsFolder then
-    BallsFolder.ChildAdded:Connect(function(child)
+    BallsFolder.ChildAdded:Connect(function()
         task.wait(0.1)
         local ball = GetBall()
         if ball and (SETTINGS.BallTrail or SETTINGS.BallRainbow) then
@@ -319,7 +333,7 @@ local function StopSpam()
     isSpamming = false
 end
 
--- Ball speed HUD update
+-- Ball speed HUD
 RunService.RenderStepped:Connect(function()
     local ball = GetBall()
     if ball then
@@ -344,6 +358,10 @@ end)
 
 -- Main parry loop
 RunService.PreSimulation:Connect(function(delta)
+    -- Frame skip to reduce CPU load and detection risk
+    parryFrameSkip = parryFrameSkip + 1
+    if parryFrameSkip % 3 ~= 0 then return end
+
     if not SETTINGS.AutoParry then
         circlepart.Transparency = 1
         spamIndicator.Visible = false
@@ -383,8 +401,8 @@ RunService.PreSimulation:Connect(function(delta)
     local PredictedPos = GetPredictedPosition(Ball, Velocity, Ping)
     lastBallVel = Velocity
 
-    local Distance = (PlayerPos - PredictedPos).Magnitude
     local RealDistance = (PlayerPos - BallPos).Magnitude
+    local PredictedDistance = (PlayerPos - PredictedPos).Magnitude
 
     local directionToPlayer = (PlayerPos - BallPos).Unit
     local dot = directionToPlayer:Dot(Velocity.Unit)
@@ -398,7 +416,6 @@ RunService.PreSimulation:Connect(function(delta)
     local Targeted = IsTargeted()
     local IsClashing = Targeted and RealDistance <= 22
 
-    -- Auto spam
     local shouldSpam = SETTINGS.AutoSpam
         and Targeted
         and dot > 0
@@ -411,12 +428,10 @@ RunService.PreSimulation:Connect(function(delta)
         StopSpam()
     end
 
-    -- Spam indicator
     local camera = workspace.CurrentCamera
     spamIndicator.Position = Vector2.new(camera.ViewportSize.X / 2, 50)
     spamIndicator.Visible = shouldSpam and SETTINGS.Visuals
 
-    -- Circle
     frameCounter = frameCounter + 1
     if frameCounter % 2 == 0 then
         local state = isSpamming and "spam"
@@ -429,7 +444,7 @@ RunService.PreSimulation:Connect(function(delta)
     if not Targeted or dot <= 0 then return end
 
     local TimeToHit = RealDistance / math.max(approachSpeed, 1)
-    local PredictionThreshold = SETTINGS.DistanceToParry / 10 + (Ping * adaptivePingOffset)
+    local PredictionThreshold = (SETTINGS.DistanceToParry / 10) + (Ping * adaptivePingOffset)
 
     if Speed > 150 then
         PredictionThreshold = PredictionThreshold * 1.2
@@ -462,7 +477,7 @@ local SpamTab = Window:Page({Icon = "rbxassetid://10709781460"})
 local VisualsTab = Window:Page({Icon = "rbxassetid://10723346959"})
 local SettingsTab = Window:Page({Icon = "rbxassetid://10734951847"})
 
--- ============ COMBAT TAB ============
+-- COMBAT TAB
 local CombatLeft = CombatTab:Section({Name = "Combat", Side = 1})
 local CombatRight = CombatTab:Section({Name = "Settings", Side = 2})
 
@@ -526,7 +541,7 @@ CombatLeft:Label({Name = "Manual Spam"}):Keybind({
             task.spawn(function()
                 while SETTINGS.ManualSpam do
                     FireClick()
-                    task.wait(SETTINGS.SpamInterval)
+                    task.wait(SETTINGS.ManualSpamInterval)
                 end
             end)
         end
@@ -542,7 +557,15 @@ CombatLeft:Toggle({
     end
 })
 
--- Settings right
+CombatLeft:Toggle({
+    Name = "Use F Key (Safer)",
+    Flag = "UseKeyParry",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.UseKeyParry = v
+    end
+})
+
 CombatRight:Toggle({
     Name = "Auto Predict Range",
     Flag = "PredictPosition",
@@ -583,17 +606,17 @@ CombatRight:Dropdown({
     end
 })
 
--- ============ SPAM TAB ============
+-- SPAM TAB
 local SpamLeft = SpamTab:Section({Name = "Auto Spam", Side = 1})
 local SpamRight = SpamTab:Section({Name = "Manual Spam", Side = 2})
 
 SpamLeft:Slider({
     Name = "Spam Interval",
     Flag = "SpamInterval",
-    Min = 0.001,
-    Max = 0.1,
-    Default = 0.008,
-    Decimals = 0.001,
+    Min = 0.01,
+    Max = 0.2,
+    Default = 0.05,
+    Decimals = 0.01,
     Suffix = "s",
     Callback = function(v) SETTINGS.SpamInterval = v end
 })
@@ -618,20 +641,20 @@ SpamLeft:Slider({
     Callback = function(v) SETTINGS.SpamDistance = v end
 })
 
-SpamRight:Label({Name = "Manual Spam Key: G (Hold)"})
+SpamRight:Label({Name = "Hold G to Manual Spam"})
 
 SpamRight:Slider({
-    Name = "Manual Spam Interval",
+    Name = "Manual Interval",
     Flag = "ManualSpamInterval",
-    Min = 0.001,
-    Max = 0.1,
-    Default = 0.008,
-    Decimals = 0.001,
+    Min = 0.01,
+    Max = 0.2,
+    Default = 0.05,
+    Decimals = 0.01,
     Suffix = "s",
-    Callback = function(v) SETTINGS.SpamInterval = v end
+    Callback = function(v) SETTINGS.ManualSpamInterval = v end
 })
 
--- ============ VISUALS TAB ============
+-- VISUALS TAB
 local VisualsLeft = VisualsTab:Section({Name = "Visualizer", Side = 1})
 local VisualsRight = VisualsTab:Section({Name = "Ball Effects", Side = 2})
 
@@ -691,7 +714,6 @@ VisualsLeft:Toggle({
     end
 })
 
--- Ball effects
 local BallTrailToggle = VisualsRight:Toggle({
     Name = "Ball Trail",
     Flag = "BallTrail",
@@ -740,11 +762,12 @@ VisualsRight:Toggle({
             if ball then AddBallTrail(ball) end
         else
             RemoveBallTrail()
-            -- Reset ball color
-            local ball = GetBall()
-            if ball then
-                pcall(function() ball.Color = Color3.fromRGB(255, 255, 255) end)
-            end
+            pcall(function()
+                local ball = GetBall()
+                if ball and ball.Parent == BallsFolder then
+                    ball.Color = Color3.fromRGB(255, 255, 255)
+                end
+            end)
             if SETTINGS.BallTrail then
                 local b = GetBall()
                 if b then AddBallTrail(b) end
@@ -753,7 +776,7 @@ VisualsRight:Toggle({
     end
 })
 
--- ============ SETTINGS TAB ============
+-- SETTINGS TAB
 local SettingsLeft = SettingsTab:Section({Name = "Menu", Side = 1})
 
 SettingsLeft:Label({Name = "Toggle UI"}):Keybind({
@@ -762,7 +785,10 @@ SettingsLeft:Label({Name = "Toggle UI"}):Keybind({
     Default = Enum.KeyCode.RightControl,
     Mode = "Toggle",
     Callback = function(v)
-        Library.MenuKeybind = tostring(Library.Flags["UIKeybind"] and Library.Flags["UIKeybind"].Key or Enum.KeyCode.RightControl)
+        Library.MenuKeybind = tostring(
+            Library.Flags["UIKeybind"] and Library.Flags["UIKeybind"].Key
+            or Enum.KeyCode.RightControl
+        )
     end
 })
 
