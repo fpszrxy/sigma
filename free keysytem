@@ -65,29 +65,80 @@ local function UpdateAdaptivePing(ping)
     adaptivePingOffset = SETTINGS.PingBasedOffset + ((sum / #pingHistory) * 0.5)
 end
 
--- Visuals
-local r, m
+-- ============================================
+-- CIRCLE DRAWING (old style using Drawing API)
+-- ============================================
+local CLASH_COLOR = Color3.fromRGB(255, 0, 0)
+local TARGET_COLOR = Color3.fromRGB(0, 255, 255)
+
+local circle = Drawing.new("Circle")
+circle.Visible = false
+circle.Radius = 80
+circle.Color = TARGET_COLOR
+circle.Thickness = 2
+circle.Filled = false
+circle.Transparency = 1
+
+local circle2 = Drawing.new("Circle") -- inner danger circle
+circle2.Visible = false
+circle2.Radius = 40
+circle2.Color = CLASH_COLOR
+circle2.Thickness = 1
+circle2.Filled = false
+circle2.Transparency = 1
+
 local function InitVisuals()
-    if not SETTINGS.Visuals then return end
     local old = workspace:FindFirstChild("AeloeSmartCircle")
     if old then old:Destroy() end
-    r = Instance.new("Part")
-    r.Name = "AeloeSmartCircle"
-    r.Parent = workspace
-    r.Anchored = true
-    r.CanCollide = false
-    r.CanQuery = false
-    r.CanTouch = false
-    r.CastShadow = false
-    r.Transparency = 1
-    r.Material = Enum.Material.Neon
-    r.Size = Vector3.new(1, 1, 0.1)
-    m = Instance.new("SpecialMesh", r)
-    m.MeshId = "rbxassetid://3270017"
-    m.Scale = Vector3.new(10, 10, 0.5)
+    circle.Visible = false
+    circle2.Visible = false
 end
 
 InitVisuals()
+
+local function UpdateCircle(root, distance, state)
+    if not SETTINGS.Visuals then
+        circle.Visible = false
+        circle2.Visible = false
+        return
+    end
+
+    local camera = workspace.CurrentCamera
+    local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
+
+    if not onScreen then
+        circle.Visible = false
+        circle2.Visible = false
+        return
+    end
+
+    local pos2D = Vector2.new(screenPos.X, screenPos.Y)
+
+    -- Scale circle size based on distance
+    local scaledRadius = math.clamp(1000 / math.max(distance, 1), 20, 120)
+
+    circle.Position = pos2D
+    circle.Radius = scaledRadius
+    circle.Visible = true
+
+    circle2.Position = pos2D
+    circle2.Radius = scaledRadius * 0.5
+    circle2.Visible = true
+
+    if state == "clash" then
+        circle.Color = CLASH_COLOR
+        circle2.Color = Color3.fromRGB(255, 100, 0)
+    elseif state == "target" then
+        circle.Color = TARGET_COLOR
+        circle2.Color = Color3.fromRGB(0, 150, 255)
+    elseif state == "spam" then
+        circle.Color = Color3.fromRGB(255, 50, 255)
+        circle2.Color = Color3.fromRGB(255, 0, 255)
+    else
+        circle.Color = Color3.fromRGB(150, 240, 255)
+        circle2.Color = Color3.fromRGB(100, 180, 255)
+    end
+end
 
 local function GetBall()
     if not BallsFolder then return nil end
@@ -156,23 +207,44 @@ local function SendClick(isClashing, ball)
     task.delay(cd, function() IsParrying = false end)
 end
 
-local function UpdateVisuals(root, distance, state)
-    if not SETTINGS.Visuals or not r or not m then return end
-    r.CFrame = root.CFrame * CFrame.new(0, -2.6, 0) * CFrame.Angles(math.rad(90), 0, 0)
-    local size = math.clamp(distance * 0.8, 5, 65)
-    targetScale = Vector3.new(size, size, 0.5)
-    m.Scale = m.Scale:Lerp(targetScale, 0.15)
-    if state == "clash" then
-        r.Color = Color3.fromRGB(255, 0, 0)
-        r.Transparency = 0.05
-    elseif state == "target" then
-        r.Color = Color3.fromRGB(0, 255, 255)
-        r.Transparency = 0.1
-    else
-        r.Color = Color3.fromRGB(150, 240, 255)
-        r.Transparency = 0.5
-    end
+-- ============================================
+-- AUTO SPAM SETTINGS
+-- ============================================
+local SPAM_SPEED_THRESHOLD = 120  -- studs/s to trigger spam
+local SPAM_DISTANCE_THRESHOLD = 20 -- studs to trigger spam
+local SPAM_INTERVAL = 0.008 -- how fast to spam clicks
+local isSpamming = false
+local spamConnection = nil
+
+local function StartSpam()
+    if isSpamming then return end
+    isSpamming = true
+    spamConnection = task.spawn(function()
+        while isSpamming do
+            FireClick()
+            task.wait(SPAM_INTERVAL)
+        end
+    end)
 end
+
+local function StopSpam()
+    if not isSpamming then return end
+    isSpamming = false
+    spamConnection = nil
+end
+
+-- ============================================
+-- SPAM INDICATOR
+-- ============================================
+local spamIndicator = Drawing.new("Text")
+spamIndicator.Visible = false
+spamIndicator.Size = 20
+spamIndicator.Font = 2
+spamIndicator.Center = true
+spamIndicator.Outline = true
+spamIndicator.OutlineColor = Color3.fromRGB(0, 0, 0)
+spamIndicator.Color = Color3.fromRGB(255, 50, 255)
+spamIndicator.Text = "[ SPAM ACTIVE ]"
 
 -- Ball Speed HUD
 local velocityGui = Instance.new("ScreenGui")
@@ -230,27 +302,37 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Main parry loop
+-- ============================================
+-- UPDATED MAIN LOOP (replace PreSimulation)
+-- ============================================
 local lastBallPos = Vector3.zero
 local lastBallVel = Vector3.zero
-local frameTime = 0
 
 RunService.PreSimulation:Connect(function(delta)
     if not SETTINGS.AutoParry then
-        if r then r.Transparency = 1 end
+        circle.Visible = false
+        circle2.Visible = false
+        spamIndicator.Visible = false
+        StopSpam()
         return
     end
 
     local Char = Player.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
     if not Root then
-        if r then r.Transparency = 1 end
+        circle.Visible = false
+        circle2.Visible = false
+        spamIndicator.Visible = false
+        StopSpam()
         return
     end
 
     local Ball = GetBall()
     if not Ball then
-        if r then r.Transparency = 1 end
+        circle.Visible = false
+        circle2.Visible = false
+        spamIndicator.Visible = false
+        StopSpam()
         return
     end
 
@@ -268,12 +350,11 @@ RunService.PreSimulation:Connect(function(delta)
     local PlayerPos = Root.Position
     local BallPos = Ball.Position
 
-    -- Acceleration detection
+    -- Acceleration tracking
     local BallAcceleration = (Velocity - lastBallVel) / math.max(delta, 0.001)
     lastBallVel = Velocity
     lastBallPos = BallPos
 
-    -- Advanced prediction using acceleration
     local function PredictWithAcceleration(timeAhead)
         local gravity = workspace.Gravity
         return BallPos
@@ -282,8 +363,8 @@ RunService.PreSimulation:Connect(function(delta)
             + Vector3.new(0, -0.5 * gravity * timeAhead * timeAhead, 0)
     end
 
-    local PredictedPos = SETTINGS.PredictPosition 
-        and PredictWithAcceleration(Ping) 
+    local PredictedPos = SETTINGS.PredictPosition
+        and PredictWithAcceleration(Ping)
         or BallPos
 
     local Distance = (PlayerPos - PredictedPos).Magnitude
@@ -293,24 +374,46 @@ RunService.PreSimulation:Connect(function(delta)
     local velocityDirection = Velocity.Unit
     local dot = directionToPlayer:Dot(velocityDirection)
 
-    -- Extra check: is ball actually moving toward player
     local approachSpeed = dot * Speed
+
     if approachSpeed <= 0 then
         LastBallHit = nil
-        return
+        StopSpam()
     end
 
     if dot < 0 then
         LastBallHit = nil
-        return
     end
 
     local Targeted = IsTargeted()
     local IsClashing = Targeted and RealDistance <= SETTINGS.ClashDistance
 
+    -- Auto spam check — fast ball close to you
+    local shouldSpam = SETTINGS.AutoParry
+        and Speed >= SPAM_SPEED_THRESHOLD
+        and RealDistance <= SPAM_DISTANCE_THRESHOLD
+        and Targeted
+        and dot > 0
+
+    if shouldSpam then
+        StartSpam()
+    else
+        StopSpam()
+    end
+
+    -- Update spam indicator position
+    local camera = workspace.CurrentCamera
+    spamIndicator.Position = Vector2.new(camera.ViewportSize.X / 2, 50)
+    spamIndicator.Visible = shouldSpam
+
+    -- Update circles
     frameCounter = frameCounter + 1
     if frameCounter % 2 == 0 then
-        UpdateVisuals(Root, RealDistance, IsClashing and "clash" or (Targeted and "target" or "neutral"))
+        local state = shouldSpam and "spam"
+            or (IsClashing and "clash")
+            or (Targeted and "target")
+            or "neutral"
+        UpdateCircle(Root, RealDistance, state)
     end
 
     if IsClashing then
@@ -319,7 +422,6 @@ RunService.PreSimulation:Connect(function(delta)
     end
 
     if Targeted and dot > 0 then
-        -- More accurate time to hit using approach speed
         local TimeToHit = RealDistance / math.max(approachSpeed, 1)
         local PredictionThreshold = SETTINGS.DistanceToParry + (Ping * adaptivePingOffset)
 
@@ -329,7 +431,6 @@ RunService.PreSimulation:Connect(function(delta)
             PredictionThreshold = PredictionThreshold * 1.1
         end
 
-        -- Emergency
         if RealDistance <= SETTINGS.EmergencyRadius then
             IsParrying = false
             SendClick(false, Ball)
@@ -342,12 +443,16 @@ RunService.PreSimulation:Connect(function(delta)
     end
 end)
 
+-- Cleanup on respawn
 Player.CharacterAdded:Connect(function()
     LastBallHit = nil
     IsParrying = false
     adaptivePingOffset = SETTINGS.PingBasedOffset
     pingHistory = {}
-    if r then r.Transparency = 1 end
+    circle.Visible = false
+    circle2.Visible = false
+    spamIndicator.Visible = false
+    StopSpam()
     InitVisuals()
 end)
 
@@ -491,6 +596,30 @@ ParrySection2:AddSlider({
     end
 })
 
+ParrySection2:AddSlider({
+    Text = "Spam Speed Threshold",
+    Flag = "SpamSpeed",
+    Min = 50,
+    Max = 300,
+    Default = 120,
+    Suffix = " studs/s",
+    Callback = function(value)
+        SPAM_SPEED_THRESHOLD = value
+    end
+})
+
+ParrySection2:AddSlider({
+    Text = "Spam Distance",
+    Flag = "SpamDistance",
+    Min = 5,
+    Max = 50,
+    Default = 20,
+    Suffix = " studs",
+    Callback = function(value)
+        SPAM_DISTANCE_THRESHOLD = value
+    end
+})
+
 -- Visuals Left
 local VisualsSection = VisualsTab:AddSection({
     Title = "Visuals",
@@ -503,8 +632,9 @@ VisualsSection:AddToggle({
     Default = true,
     Callback = function(value)
         SETTINGS.Visuals = value
-        if not value and r then
-            r.Transparency = 1
+        if not value then
+            if circle then circle.Visible = false end
+            if circle2 then circle2.Visible = false end
         end
     end
 })
@@ -530,7 +660,7 @@ VisualsSection2:AddColorPicker({
     Default = Color3.fromRGB(255, 0, 0),
     Transparency = 0,
     Callback = function(color, alpha)
-        if r then r.Color = color end
+        CLASH_COLOR = color
     end
 })
 
@@ -540,7 +670,7 @@ VisualsSection2:AddColorPicker({
     Default = Color3.fromRGB(0, 255, 255),
     Transparency = 0,
     Callback = function(color, alpha)
-        -- stored for use in UpdateVisuals
+        TARGET_COLOR = color
     end
 })
 
