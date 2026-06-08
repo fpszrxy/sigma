@@ -54,6 +54,8 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         SETTINGS.AutoParry = not SETTINGS.AutoParry
     elseif input.KeyCode == Enum.KeyCode.K then
         AutoTuneSettings()
+    elseif input.KeyCode == Enum.KeyCode.P then
+        _G.AutoSpamParryEnabled = not _G.AutoSpamParryEnabled
     end
 end)
 
@@ -189,10 +191,32 @@ RunService.PostSimulation:Connect(function()
 
     -- Auto Spam Parry
     if _G.AutoSpamParryEnabled then
-        local autoClickInterval = 0.1 -- Adjust this value for faster/slower spamming
+        local autoClickInterval = 0.1 + math.random() / 20 -- Randomize interval slightly to avoid detection
         if tick() - LastClick > autoClickInterval then
             SendClick(false, Ball)
         end
+    end
+
+    -- Velocity Display
+    if r and frameCounter % 60 == 0 then
+        local velocityText = Instance.new("BillboardGui", Player.Character.Head)
+        velocityText.Name = "VelocityDisplay"
+        velocityText.Adornee = Player.Character.Head
+        velocityText.StudsOffset = Vector3.new(0, 2, 0)
+
+        local label = Instance.new("TextLabel", velocityText)
+        label.Size = UDim2.new(0, 100, 0, 50)
+        label.Position = UDim2.new(0.5, -50, 0, -25)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = Color3.fromRGB(255, 255, 255)
+        label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+        label.TextStrokeTransparency = 0.5
+        label.Font = Enum.Font.SourceSansBold
+        label.TextSize = 18
+        label.Text = "Speed: " .. math.floor(Speed) .. " m/s"
+
+        wait(1) -- Show the text for 1 second before removing it
+        velocityText:Destroy()
     end
 end)
 
@@ -200,4 +224,32 @@ end)
 Player.CharacterAdded:Connect(function()
     LastBallHit = nil
     IsParrying = false
+
+    -- Recreate visuals
+    if SETTINGS.Visuals then
+        r = Instance.new("Part")
+        r.Name = "AeloeSmartCircle"
+        r.Parent = workspace
+        r.Anchored, r.CanCollide = true, false
+        r.Transparency, r.Material = 0.3, Enum.Material.Neon
+        m = Instance.new("SpecialMesh", r)
+        m.MeshId = "rbxassetid://3270017"
+    end
+end)
+
+-- Enhance Player Survival
+local function EnhanceSurvival()
+    -- Example: Lower health regeneration rate
+    local humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    humanoid.HealthRegenerationRate = 0.1 -- Set to a lower value (e.g., 0.1) to make the player regenerate slower
+end
+
+EnhanceSurvival()
+
+-- Auto-Tune Settings when Character is Added
+Player.CharacterAdded:Connect(function()
+    AutoTuneSettings() -- Automatically tune settings based on current game conditions
+    EnhanceSurvival()  -- Enhance player survival
 end)
