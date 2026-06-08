@@ -271,16 +271,6 @@ if BallsFolder then
     end)
 end
 
--- Spam indicator
-local spamIndicator = Drawing.new("Text")
-spamIndicator.Visible = false
-spamIndicator.Size = 20
-spamIndicator.Font = 2
-spamIndicator.Center = true
-spamIndicator.Outline = true
-spamIndicator.OutlineColor = Color3.fromRGB(0, 0, 0)
-spamIndicator.Color = Color3.fromRGB(255, 50, 255)
-spamIndicator.Text = "[ SPAM ACTIVE ]"
 
 -- Ball Speed HUD
 local velocityGui = Instance.new("ScreenGui")
@@ -364,7 +354,6 @@ RunService.PreSimulation:Connect(function(delta)
 
     if not SETTINGS.AutoParry then
         circlepart.Transparency = 1
-        spamIndicator.Visible = false
         StopSpam()
         return
     end
@@ -428,9 +417,6 @@ RunService.PreSimulation:Connect(function(delta)
         StopSpam()
     end
 
-    local camera = workspace.CurrentCamera
-    spamIndicator.Position = Vector2.new(camera.ViewportSize.X / 2, 50)
-    spamIndicator.Visible = shouldSpam and SETTINGS.Visuals
 
     frameCounter = frameCounter + 1
     if frameCounter % 2 == 0 then
@@ -464,7 +450,6 @@ Player.CharacterAdded:Connect(function()
     pingHistory = {}
     lastBallVel = Vector3.zero
     circlepart.Transparency = 1
-    spamIndicator.Visible = false
     StopSpam()
 end)
 
@@ -489,7 +474,6 @@ local AutoParryToggle = CombatLeft:Toggle({
         SETTINGS.AutoParry = v
         if not v then
             circlepart.Transparency = 1
-            spamIndicator.Visible = false
             StopSpam()
         end
     end
@@ -666,7 +650,6 @@ VisualsLeft:Toggle({
         SETTINGS.Visuals = v
         if not v then
             circlepart.Transparency = 1
-            spamIndicator.Visible = false
         end
     end
 })
