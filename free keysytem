@@ -6,32 +6,19 @@ local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local TweenService = game:GetService("TweenService")
 local Player = Players.LocalPlayer
 
 -- Settings
 getgenv().Aeloe = {
     AutoParry = false,
+    PingBased = true,
     PingBasedOffset = 1.95,
-    DistanceToParry = 20,
-    PredictPosition = true,
-    AdaptivePing = true,
-    AutoSpam = false,
-    ManualSpam = false,
-    SpamSpeedThreshold = 120,
-    SpamDistance = 20,
-    SpamInterval = 0.05,
-    ManualSpamInterval = 0.05,
+    DistanceToParry = 0.65,
+    EmergencyRadius = 10,
+    ClashDistance = 22,
+    ClashSpeed = 0.01,
+    NormalSpeed = 0.05,
     Visuals = true,
-    AutoHideIfMiss = false,
-    CurveMode = "Camera",
-    BallTrail = false,
-    TrailColor1 = Color3.fromRGB(255, 0, 0),
-    TrailColor2 = Color3.fromRGB(0, 0, 255),
-    CircleColor = Color3.fromRGB(0, 255, 0),
-    CircleTransparency = 0.5,
-    CircleSize = 20,
-    UseKeyParry = false, -- use F key instead of mouse click
 }
 
 local SETTINGS = getgenv().Aeloe
@@ -39,129 +26,12 @@ local LastClick = 0
 local LastBallHit = nil
 local IsParrying = false
 local frameCounter = 0
-local pingHistory = {}
-local pingHistoryMax = 10
-local adaptivePingOffset = SETTINGS.PingBasedOffset
-local lastBallVel = Vector3.zero
-local isSpamming = false
-local ballTrailObj = nil
-local parryFrameSkip = 0
-
 local BallsFolder = workspace:FindFirstChild("Balls") or workspace:WaitForChild("Balls", 5)
 
--- Network stats
-local NetworkStats = nil
-pcall(function()
-    NetworkStats = Stats:FindFirstChild("Network")
-        and Stats.Network:FindFirstChild("ServerStatsItem")
-        and Stats.Network.ServerStatsItem:FindFirstChild("Data Ping")
-end)
+local NetworkStats = Stats:FindFirstChild("Network")
+    and Stats.Network:FindFirstChild("ServerStatsItem")
+    and Stats.Network.ServerStatsItem:FindFirstChild("Data Ping")
 
-local function GetPing()
-    local ping = 0.04
-    pcall(function()
-        if NetworkStats then
-            ping = math.clamp(NetworkStats.Value / 1000, 0.005, 0.5)
-        end
-    end)
-    return ping
-end
-
-local function UpdateAdaptivePing(ping)
-    if not SETTINGS.AdaptivePing then return end
-    table.insert(pingHistory, ping)
-    if #pingHistory > pingHistoryMax then table.remove(pingHistory, 1) end
-    local sum = 0
-    for _, v in ipairs(pingHistory) do sum = sum + v end
-    adaptivePingOffset = SETTINGS.PingBasedOffset + ((sum / #pingHistory) * 0.5)
-end
-
-local function GetBall()
-    if not BallsFolder then return nil end
-    local children = BallsFolder:GetChildren()
-    for i = 1, #children do
-        local v = children[i]
-        local ok, result = pcall(function() return v:GetAttribute("realBall") == true end)
-        if ok and result then return v end
-    end
-    for i = 1, #children do
-        local v = children[i]
-        if v:IsA("BasePart") then
-            local ok, mag = pcall(function() return v.AssemblyLinearVelocity.Magnitude end)
-            if ok and mag and mag > 15 then return v end
-        end
-    end
-    return nil
-end
-
-local function IsTargeted()
-    local char = Player.Character
-    if not char then return false end
-    local ok, attr = pcall(function() return char:GetAttribute("Targeted") == true end)
-    if ok and attr then return true end
-    local highlight = char:FindFirstChildWhichIsA("Highlight")
-    if highlight and highlight.Parent == char then return true end
-    return false
-end
-
--- Fire click with optional F key mode
-local function FireClick()
-    pcall(function()
-        if SETTINGS.UseKeyParry then
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
-            task.wait(0.016)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
-        else
-            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-            VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-        end
-    end)
-end
-
--- Curve mode prediction
-local function GetPredictedPosition(ball, velocity, ping)
-    if not SETTINGS.PredictPosition then return ball.Position end
-    local mode = SETTINGS.CurveMode
-    local gravity = workspace.Gravity
-    local basePos = ball.Position
-        + (velocity * ping)
-        + Vector3.new(0, -0.5 * gravity * ping * ping, 0)
-
-    if mode == "Camera" then
-        local camDir = workspace.CurrentCamera.CFrame.LookVector
-        return basePos + camDir * 0.5
-    elseif mode == "Random" then
-        return basePos + Vector3.new(
-            math.random(-2, 2) * 0.1,
-            math.random(-2, 2) * 0.1,
-            math.random(-2, 2) * 0.1
-        )
-    elseif mode == "Accelerated" then
-        local accel = (velocity - lastBallVel) / math.max(ping, 0.001)
-        return basePos + (accel * 0.5 * ping * ping)
-    elseif mode == "Backwards" then
-        return basePos - velocity * ping * 0.3
-    elseif mode == "Slow" then
-        return ball.Position + velocity * (ping * 0.5)
-    elseif mode == "High" then
-        return basePos + Vector3.new(0, 5, 0)
-    end
-    return basePos
-end
-
-local function SendClick(ball)
-    if not SETTINGS.AutoParry or IsParrying then return end
-    local now = tick()
-    if LastBallHit == ball and (now - LastClick) < 0.5 then return end
-    if (now - LastClick) < 0.1 then return end -- increased from 0.05
-    IsParrying = true
-    LastClick = now
-    LastBallHit = ball
-    FireClick()
-    task.delay(0.1, function() IsParrying = false end)
-end
-
--- Visual part
 local r, m
 local function InitVisuals()
     local old = workspace:FindFirstChild("AeloeSmartCircle")
@@ -171,29 +41,54 @@ local function InitVisuals()
     r.Parent = workspace
     r.Anchored = true
     r.CanCollide = false
-    r.CanQuery = false
-    r.CanTouch = false
-    r.CastShadow = false
     r.Transparency = 1
     r.Material = Enum.Material.Neon
     m = Instance.new("SpecialMesh", r)
     m.MeshId = "rbxassetid://3270017"
 end
 
-if SETTINGS.Visuals then
-    InitVisuals()
+InitVisuals()
+
+local function GetBall()
+    if not BallsFolder then return nil end
+    local children = BallsFolder:GetChildren()
+    for i = 1, #children do
+        local v = children[i]
+        if v:GetAttribute("realBall") == true then return v end
+    end
+    for i = 1, #children do
+        local v = children[i]
+        if v:IsA("BasePart") and v.AssemblyLinearVelocity.Magnitude > 15 then return v end
+    end
+    return nil
+end
+
+local function IsTargeted()
+    if not Player.Character then return false end
+    return Player.Character:GetAttribute("Targeted") == true
+        or Player.Character:FindFirstChild("Highlight") ~= nil
+end
+
+local function SendClick(isClashing, ball)
+    if not SETTINGS.AutoParry or IsParrying then return end
+    local now = tick()
+    local cd = isClashing and SETTINGS.ClashSpeed or SETTINGS.NormalSpeed
+    if not isClashing and LastBallHit == ball and (now - LastClick) < 0.5 then return end
+    if (now - LastClick) < cd then return end
+    IsParrying = true
+    LastClick = now
+    LastBallHit = ball
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    task.delay(cd, function() IsParrying = false end)
 end
 
 local function UpdateVisuals(root, distance, state)
     if not SETTINGS.Visuals or not r then return end
-    
-    -- Small wait so it follows character smoothly
     task.wait(0.01)
-    
     r.CFrame = root.CFrame * CFrame.new(0, -2.6, 0) * CFrame.Angles(math.rad(90), 0, 0)
     local targetSize = math.clamp(distance * 0.8, 5, 65)
     m.Scale = m.Scale:Lerp(Vector3.new(targetSize, targetSize, 0.5), 0.5)
-
     if state == "clash" then
         r.Color = Color3.fromRGB(255, 0, 0)
         r.Transparency = 0.05
@@ -206,133 +101,9 @@ local function UpdateVisuals(root, distance, state)
     end
 end
 
--- Ball Trail
-local function RemoveBallTrail()
-    if ballTrailObj then
-        pcall(function() ballTrailObj:Destroy() end)
-        ballTrailObj = nil
-    end
-end
-
-local function AddBallTrail(ball)
-    RemoveBallTrail()
-    if not ball then return end
-
-    local attachment0 = Instance.new("Attachment")
-    attachment0.Parent = ball
-    local attachment1 = Instance.new("Attachment")
-    attachment1.Position = Vector3.new(0, 0, -ball.Size.Z / 2)
-    attachment1.Parent = ball
-
-    local trail = Instance.new("Trail")
-    trail.Attachment0 = attachment0
-    trail.Attachment1 = attachment1
-    trail.Lifetime = 0.5
-    trail.MinLength = 0
-    trail.FaceCamera = true
-    trail.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
-    trail.Transparency = NumberSequence.new(0, 1)
-    trail.Parent = ball
-    ballTrailObj = trail
-end
-
-if BallsFolder then
-    BallsFolder.ChildAdded:Connect(function()
-        task.wait(0.1)
-        local ball = GetBall()
-        if ball and SETTINGS.BallTrail then
-            AddBallTrail(ball)
-        end
-    end)
-    BallsFolder.ChildRemoved:Connect(function()
-        RemoveBallTrail()
-    end)
-end
-
-
--- Ball Speed HUD
-local velocityGui = Instance.new("ScreenGui")
-velocityGui.Name = "DihHubVelocity"
-velocityGui.ResetOnSpawn = false
-velocityGui.Parent = Player.PlayerGui
-
-local velocityFrame = Instance.new("Frame")
-velocityFrame.Size = UDim2.new(0, 200, 0, 80)
-velocityFrame.Position = UDim2.new(1, -220, 0.5, -40)
-velocityFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-velocityFrame.BackgroundTransparency = 0.3
-velocityFrame.BorderSizePixel = 0
-velocityFrame.Parent = velocityGui
-Instance.new("UICorner", velocityFrame).CornerRadius = UDim.new(0, 8)
-
-local hudTitle = Instance.new("TextLabel")
-hudTitle.Size = UDim2.new(1, 0, 0.4, 0)
-hudTitle.BackgroundTransparency = 1
-hudTitle.TextColor3 = Color3.fromRGB(0, 200, 255)
-hudTitle.Font = Enum.Font.GothamBold
-hudTitle.TextSize = 14
-hudTitle.Text = "dih hub | ball speed"
-hudTitle.Parent = velocityFrame
-
-local velocityLabel = Instance.new("TextLabel")
-velocityLabel.Size = UDim2.new(1, 0, 0.6, 0)
-velocityLabel.Position = UDim2.new(0, 0, 0.4, 0)
-velocityLabel.BackgroundTransparency = 1
-velocityLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-velocityLabel.Font = Enum.Font.GothamBold
-velocityLabel.TextSize = 18
-velocityLabel.Text = "0 studs/s"
-velocityLabel.Parent = velocityFrame
-
--- Auto spam
-local function StartSpam()
-    if isSpamming then return end
-    isSpamming = true
-    task.spawn(function()
-        while isSpamming and SETTINGS.AutoSpam do
-            FireClick()
-            task.wait(SETTINGS.SpamInterval)
-        end
-        isSpamming = false
-    end)
-end
-
-local function StopSpam()
-    isSpamming = false
-end
-
--- Ball speed HUD
-RunService.RenderStepped:Connect(function()
-    local ball = GetBall()
-    if ball then
-        local ok, speed = pcall(function()
-            return math.floor(ball.AssemblyLinearVelocity.Magnitude)
-        end)
-        if ok and speed then
-            velocityLabel.Text = tostring(speed) .. " studs/s"
-            if speed > 150 then
-                velocityLabel.TextColor3 = Color3.fromRGB(255, 50, 50)
-            elseif speed > 80 then
-                velocityLabel.TextColor3 = Color3.fromRGB(255, 165, 0)
-            else
-                velocityLabel.TextColor3 = Color3.fromRGB(50, 255, 50)
-            end
-        end
-    else
-        velocityLabel.Text = "no ball"
-        velocityLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-    end
-end)
-
--- Main parry loop
-RunService.PreSimulation:Connect(function(delta)
-    -- Frame skip to reduce CPU load and detection risk
-    parryFrameSkip = parryFrameSkip + 1
-    if parryFrameSkip % 3 ~= 0 then return end
-
+RunService.PostSimulation:Connect(function()
     if not SETTINGS.AutoParry then
         if r then r.Transparency = 1 end
-        StopSpam()
         return
     end
 
@@ -340,95 +111,54 @@ RunService.PreSimulation:Connect(function(delta)
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
     if not Root then
         if r then r.Transparency = 1 end
-        StopSpam()
         return
     end
 
     local Ball = GetBall()
     if not Ball then
         if r then r.Transparency = 1 end
-        StopSpam()
         return
     end
 
-    local Velocity, Speed
-    local ok = pcall(function()
-        Velocity = Ball.AssemblyLinearVelocity
-        Speed = Velocity.Magnitude
-    end)
-    if not ok or not Velocity or not Speed then return end
-    if Speed < 1 then return end
-
-    local Ping = GetPing()
-    UpdateAdaptivePing(Ping)
-
-    local PlayerPos = Root.Position
-    local BallPos = Ball.Position
-
-    local PredictedPos = GetPredictedPosition(Ball, Velocity, Ping)
-    lastBallVel = Velocity
-
-    local RealDistance = (PlayerPos - BallPos).Magnitude
-    local PredictedDistance = (PlayerPos - PredictedPos).Magnitude
+    local BallPos, PlayerPos = Ball.Position, Root.Position
+    local Velocity = Ball.AssemblyLinearVelocity
+    local Speed = Velocity.Magnitude
+    local Distance = (PlayerPos - BallPos).Magnitude
 
     local directionToPlayer = (PlayerPos - BallPos).Unit
-    local dot = directionToPlayer:Dot(Velocity.Unit)
-    local approachSpeed = dot * Speed
+    local velocityDirection = Velocity.Unit
+    local dot = directionToPlayer:Dot(velocityDirection)
 
-    if approachSpeed <= 0 then
-        LastBallHit = nil
-        StopSpam()
-    end
+    if dot < 0 then LastBallHit = nil end
 
     local Targeted = IsTargeted()
-    local IsClashing = Targeted and RealDistance <= 22
-
-    local shouldSpam = SETTINGS.AutoSpam
-        and Targeted
-        and dot > 0
-        and Speed >= SETTINGS.SpamSpeedThreshold
-        and RealDistance <= SETTINGS.SpamDistance
-
-    if shouldSpam then
-        StartSpam()
-    else
-        StopSpam()
-    end
-
+    local IsClashing = Targeted and Distance <= SETTINGS.ClashDistance
 
     frameCounter = frameCounter + 1
-    if frameCounter % 2 == 0 then
-        local state = isSpamming and "spam"
-            or (IsClashing and "clash")
-            or (Targeted and "target")
-            or "neutral"
-        UpdateVisuals(Root, RealDistance, state)
+    if r and frameCounter % 2 == 0 then
+        r.Transparency = 0.3
+        UpdateVisuals(Root, Distance, IsClashing and "clash" or (Targeted and "target" or "neutral"))
     end
 
-    if not Targeted or dot <= 0 then return end
-
-    local TimeToHit = RealDistance / math.max(approachSpeed, 1)
-    local PredictionThreshold = (SETTINGS.DistanceToParry / 10) + (Ping * adaptivePingOffset)
-
-    if Speed > 150 then
-        PredictionThreshold = PredictionThreshold * 1.2
-    elseif Speed > 100 then
-        PredictionThreshold = PredictionThreshold * 1.1
-    end
-
-    if TimeToHit <= PredictionThreshold then
-        SendClick(Ball)
+    if IsClashing then
+        SendClick(true, Ball)
+    elseif Targeted and dot > 0 then
+        local Ping = (NetworkStats and NetworkStats.Value / 1000) or 0.04
+        local TimeToHit = Distance / math.max(Speed, 1)
+        local PredictionThreshold = SETTINGS.DistanceToParry + (Ping * SETTINGS.PingBasedOffset)
+        if Speed > 150 then
+            PredictionThreshold = PredictionThreshold * 1.15
+        end
+        if TimeToHit <= PredictionThreshold or Distance <= SETTINGS.EmergencyRadius then
+            SendClick(false, Ball)
+        end
     end
 end)
 
 Player.CharacterAdded:Connect(function()
     LastBallHit = nil
     IsParrying = false
-    adaptivePingOffset = SETTINGS.PingBasedOffset
-    pingHistory = {}
-    lastBallVel = Vector3.zero
     if r then r.Transparency = 1 end
-    StopSpam()
 end)
 
 -- GUI
@@ -436,11 +166,10 @@ local KeybindList = Library:KeybindList({Name = "dih hub"})
 local Window = Library:Window({Logo = "rbxassetid://77749228793011"})
 
 local CombatTab = Window:Page({Icon = "rbxassetid://108020878442937"})
-local SpamTab = Window:Page({Icon = "rbxassetid://10709781460"})
 local VisualsTab = Window:Page({Icon = "rbxassetid://10723346959"})
 local SettingsTab = Window:Page({Icon = "rbxassetid://10734951847"})
 
--- COMBAT TAB
+-- COMBAT
 local CombatLeft = CombatTab:Section({Name = "Combat", Side = 1})
 local CombatRight = CombatTab:Section({Name = "Settings", Side = 2})
 
@@ -450,10 +179,7 @@ local AutoParryToggle = CombatLeft:Toggle({
     Default = false,
     Callback = function(v)
         SETTINGS.AutoParry = v
-        if not v then
-            if r then r.Transparency = 1 end
-            StopSpam()
-        end
+        if not v and r then r.Transparency = 1 end
     end
 })
 
@@ -464,258 +190,84 @@ AutoParryToggle:Keybind({
     Mode = "Toggle",
     Callback = function(v)
         SETTINGS.AutoParry = v
-        if not v then
-            if r then r.Transparency = 1 end
-            StopSpam()
-        end
-    end
-})
-
-local AutoSpamToggle = CombatLeft:Toggle({
-    Name = "Auto Spam",
-    Flag = "AutoSpam",
-    Default = false,
-    Callback = function(v)
-        SETTINGS.AutoSpam = v
-        if not v then StopSpam() end
-    end
-})
-
-AutoSpamToggle:Keybind({
-    Name = "Auto Spam",
-    Flag = "AutoSpamBind",
-    Default = Enum.KeyCode.H,
-    Mode = "Toggle",
-    Callback = function(v)
-        SETTINGS.AutoSpam = v
-        if not v then StopSpam() end
-    end
-})
-
-CombatLeft:Label({Name = "Manual Spam"}):Keybind({
-    Name = "Manual Spam",
-    Flag = "ManualSpamBind",
-    Default = Enum.KeyCode.G,
-    Mode = "Hold",
-    Callback = function(v)
-        SETTINGS.ManualSpam = v
-        if v then
-            task.spawn(function()
-                while SETTINGS.ManualSpam do
-                    FireClick()
-                    task.wait(SETTINGS.ManualSpamInterval)
-                end
-            end)
-        end
-    end
-})
-
-CombatLeft:Toggle({
-    Name = "Auto Hide if Miss",
-    Flag = "AutoHideMiss",
-    Default = false,
-    Callback = function(v)
-        SETTINGS.AutoHideIfMiss = v
-    end
-})
-
-CombatLeft:Toggle({
-    Name = "Use F Key (Safer)",
-    Flag = "UseKeyParry",
-    Default = false,
-    Callback = function(v)
-        SETTINGS.UseKeyParry = v
-    end
-})
-
-CombatRight:Toggle({
-    Name = "Auto Predict Range",
-    Flag = "PredictPosition",
-    Default = true,
-    Callback = function(v)
-        SETTINGS.PredictPosition = v
+        if not v and r then r.Transparency = 1 end
     end
 })
 
 CombatRight:Slider({
-    Name = "Base Range",
+    Name = "Distance To Parry",
     Flag = "DistanceToParry",
-    Min = 1,
-    Max = 50,
-    Default = 20,
-    Decimals = 1,
+    Min = 0.1,
+    Max = 3,
+    Default = 0.65,
+    Decimals = 0.01,
     Callback = function(v)
         SETTINGS.DistanceToParry = v
     end
 })
 
-CombatRight:Toggle({
-    Name = "Adaptive Ping",
-    Flag = "AdaptivePing",
-    Default = true,
-    Callback = function(v)
-        SETTINGS.AdaptivePing = v
-    end
-})
-
-CombatRight:Dropdown({
-    Name = "Curve Type",
-    Flag = "CurveMode",
-    Default = "Camera",
-    Items = {"Camera", "Random", "Accelerated", "Backwards", "Slow", "High"},
-    Callback = function(v)
-        SETTINGS.CurveMode = v
-    end
-})
-
--- SPAM TAB
-local SpamLeft = SpamTab:Section({Name = "Auto Spam", Side = 1})
-local SpamRight = SpamTab:Section({Name = "Manual Spam", Side = 2})
-
-SpamLeft:Slider({
-    Name = "Spam Interval",
-    Flag = "SpamInterval",
-    Min = 0.01,
-    Max = 0.2,
-    Default = 0.05,
+CombatRight:Slider({
+    Name = "Ping Offset",
+    Flag = "PingOffset",
+    Min = 0.5,
+    Max = 5,
+    Default = 1.95,
     Decimals = 0.01,
-    Suffix = "s",
-    Callback = function(v) SETTINGS.SpamInterval = v end
+    Callback = function(v)
+        SETTINGS.PingBasedOffset = v
+    end
 })
 
-SpamLeft:Slider({
-    Name = "Speed Threshold",
-    Flag = "SpamSpeed",
-    Min = 50,
-    Max = 300,
-    Default = 120,
-    Suffix = " s/s",
-    Callback = function(v) SETTINGS.SpamSpeedThreshold = v end
-})
-
-SpamLeft:Slider({
-    Name = "Spam Distance",
-    Flag = "SpamDistance",
-    Min = 5,
-    Max = 100,
-    Default = 20,
+CombatRight:Slider({
+    Name = "Emergency Radius",
+    Flag = "EmergencyRadius",
+    Min = 1,
+    Max = 30,
+    Default = 10,
     Suffix = " studs",
-    Callback = function(v) SETTINGS.SpamDistance = v end
+    Callback = function(v)
+        SETTINGS.EmergencyRadius = v
+    end
 })
 
-SpamRight:Label({Name = "Hold G to Manual Spam"})
-
-SpamRight:Slider({
-    Name = "Manual Interval",
-    Flag = "ManualSpamInterval",
-    Min = 0.01,
-    Max = 0.2,
-    Default = 0.05,
-    Decimals = 0.01,
-    Suffix = "s",
-    Callback = function(v) SETTINGS.ManualSpamInterval = v end
+CombatRight:Slider({
+    Name = "Clash Distance",
+    Flag = "ClashDistance",
+    Min = 5,
+    Max = 50,
+    Default = 22,
+    Suffix = " studs",
+    Callback = function(v)
+        SETTINGS.ClashDistance = v
+    end
 })
 
--- VISUALS TAB
+-- VISUALS
 local VisualsLeft = VisualsTab:Section({Name = "Visualizer", Side = 1})
-local VisualsRight = VisualsTab:Section({Name = "Ball Effects", Side = 2})
 
-VisualsLeft:Toggle({
+local VisualsToggle = VisualsLeft:Toggle({
     Name = "Circle Visualizer",
     Flag = "CircleVisuals",
     Default = true,
     Callback = function(v)
         SETTINGS.Visuals = v
-        if not v then
-            if r then r.Transparency = 1 end
-        else
-            if not r then InitVisuals() end
-        end
+        if not v and r then r.Transparency = 1 end
+        if v and not r then InitVisuals() end
     end
 })
 
-VisualsLeft:Label({Name = "Circle Color"}):Colorpicker({
-    Flag = "CircleColor",
-    Default = Color3.fromRGB(0, 255, 0),
-    Callback = function(color)
-        SETTINGS.CircleColor = color
-        if r then r.Color = color end
-    end
-})
-
-VisualsLeft:Slider({
-    Name = "Circle Size",
-    Flag = "CircleSize",
-    Min = 5,
-    Max = 50,
-    Default = 20,
-    Decimals = 1,
+VisualsToggle:Keybind({
+    Name = "Circle Visualizer",
+    Flag = "Visualsbind",
+    Default = Enum.KeyCode.V,
+    Mode = "Toggle",
     Callback = function(v)
-        SETTINGS.CircleSize = v
+        SETTINGS.Visuals = v
+        if not v and r then r.Transparency = 1 end
     end
 })
 
-VisualsLeft:Slider({
-    Name = "Circle Transparency",
-    Flag = "CircleTransparency",
-    Min = 0,
-    Max = 0.9,
-    Default = 0.5,
-    Decimals = 0.1,
-    Callback = function(v)
-        SETTINGS.CircleTransparency = v
-    end
-})
-
-VisualsLeft:Toggle({
-    Name = "Ball Speed HUD",
-    Flag = "BallSpeedHUD",
-    Default = true,
-    Callback = function(v)
-        velocityFrame.Visible = v
-    end
-})
-
-local BallTrailToggle = VisualsRight:Toggle({
-    Name = "Ball Trail",
-    Flag = "BallTrail",
-    Default = false,
-    Callback = function(v)
-        SETTINGS.BallTrail = v
-        if v then
-            local ball = GetBall()
-            if ball then AddBallTrail(ball) end
-        else
-            RemoveBallTrail()
-        end
-    end
-})
-
-BallTrailToggle:Colorpicker({
-    Flag = "TrailColor1",
-    Default = Color3.fromRGB(255, 0, 0),
-    Callback = function(color)
-        SETTINGS.TrailColor1 = color
-        if ballTrailObj then
-            ballTrailObj.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
-        end
-    end
-})
-
-BallTrailToggle:Colorpicker({
-    Flag = "TrailColor2",
-    Default = Color3.fromRGB(0, 0, 255),
-    Callback = function(color)
-        SETTINGS.TrailColor2 = color
-        if ballTrailObj then
-            ballTrailObj.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
-        end
-    end
-})
-
-
-
--- SETTINGS TAB
+-- SETTINGS
 local SettingsLeft = SettingsTab:Section({Name = "Menu", Side = 1})
 
 SettingsLeft:Label({Name = "Toggle UI"}):Keybind({
@@ -724,11 +276,27 @@ SettingsLeft:Label({Name = "Toggle UI"}):Keybind({
     Default = Enum.KeyCode.RightControl,
     Mode = "Toggle",
     Callback = function(v)
-        Library.MenuKeybind = tostring(
-            Library.Flags["UIKeybind"] and Library.Flags["UIKeybind"].Key
-            or Enum.KeyCode.RightControl
-        )
+        Library.MenuKeybind = Library.Flags["UIKeybind"] and tostring(Library.Flags["UIKeybind"].Key) or tostring(Enum.KeyCode.RightControl)
     end
 })
+
+-- Watermark
+local Watermark = Window:Watermark({Name = "dih hub", Logo = "rbxassetid://77749228793011"})
+Watermark:AddItem("rbxassetid://79077177539456", Player.Name)
+
+local FPSText = Watermark:AddItem("rbxassetid://81108100527616", "FPS: 60")
+local FrameTimer = tick()
+local FPS = 60
+local FrameCount = 0
+
+Library:Connect(RunService.RenderStepped, function()
+    FrameCount = FrameCount + 1
+    if tick() - FrameTimer >= 1 then
+        FPS = FrameCount
+        FrameCount = 0
+        FrameTimer = tick()
+    end
+    FPSText.Instance.Text = "FPS: " .. FPS
+end)
 
 Library:Notification("dih hub loaded!", 5, Color3.fromRGB(78, 95, 255))
