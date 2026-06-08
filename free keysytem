@@ -43,18 +43,18 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == Enum.KeyCode.L then
         SETTINGS.AutoParry = not SETTINGS.AutoParry
+    elseif input.KeyCode == Enum.KeyCode.K then
+        AutoTuneSettings()
     end
 end)
 
 local function GetBall()
     if not BallsFolder then return nil end
     local children = BallsFolder:GetChildren()
-    for i = 1, #children do
-        local v = children[i]
+    for i, v in pairs(children) do
         if v:GetAttribute("realBall") == true then return v end
     end
-    for i = 1, #children do
-        local v = children[i]
+    for i, v in pairs(children) do
         if v:IsA("BasePart") and v.AssemblyLinearVelocity.Magnitude > 15 then return v end
     end
     return nil
@@ -102,6 +102,25 @@ local function UpdateVisuals(root, distance, state)
     end
 end
 
+local function AutoTuneSettings()
+    local Char = Player.Character
+    if not Char then return end
+    local Root = Char:FindFirstChild("HumanoidRootPart")
+    if not Root then return end
+
+    local Ball = GetBall()
+    if not Ball then return end
+
+    local Ping = (NetworkStats and NetworkStats.Value / 1000) or 0.04
+    local Distance = (Ball.Position - Root.Position).Magnitude
+    local Speed = Ball.AssemblyLinearVelocity.Magnitude
+
+    SETTINGS.DistanceToParry = Distance * 0.75
+    SETTINGS.EmergencyRadius = Distance + 2
+    SETTINGS.ClashDistance = Distance * 1.5
+    SETTINGS.PingBasedOffset = Ping / 0.04
+end
+
 RunService.PostSimulation:Connect(function()
     if not SETTINGS.AutoParry then 
         if r then r.Transparency = 1 end
@@ -136,8 +155,7 @@ RunService.PostSimulation:Connect(function()
     local IsClashing = Targeted and Distance <= SETTINGS.ClashDistance
     
     frameCounter = frameCounter + 1
-    if r and frameCounter % 2 == 0 then 
-        r.Transparency = 0.3 
+    if r and frameCounter % 10 == 0 then 
         UpdateVisuals(Root, Distance, IsClashing and "clash" or (Targeted and "target" or "neutral"))
     end
 
