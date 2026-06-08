@@ -26,7 +26,6 @@ getgenv().Aeloe = {
     AutoHideIfMiss = false,
     CurveMode = "Camera",
     BallTrail = false,
-    BallRainbow = false,
     TrailColor1 = Color3.fromRGB(255, 0, 0),
     TrailColor2 = Color3.fromRGB(0, 0, 255),
     CircleColor = Color3.fromRGB(0, 255, 0),
@@ -45,9 +44,7 @@ local pingHistoryMax = 10
 local adaptivePingOffset = SETTINGS.PingBasedOffset
 local lastBallVel = Vector3.zero
 local isSpamming = false
-local rainbowHue = 0
 local ballTrailObj = nil
-local ballRainbowConnection = nil
 local parryFrameSkip = 0
 
 local BallsFolder = workspace:FindFirstChild("Balls") or workspace:WaitForChild("Balls", 5)
@@ -164,46 +161,48 @@ local function SendClick(ball)
     task.delay(0.1, function() IsParrying = false end)
 end
 
--- 3D World Circle - parented to camera folder to avoid server detection
-local localFolder = Instance.new("Folder")
-localFolder.Name = "DihHubLocal"
-localFolder.Parent = workspace.CurrentCamera
+-- Visual part
+local r, m
+local function InitVisuals()
+    local old = workspace:FindFirstChild("AeloeSmartCircle")
+    if old then old:Destroy() end
+    r = Instance.new("Part")
+    r.Name = "AeloeSmartCircle"
+    r.Parent = workspace
+    r.Anchored = true
+    r.CanCollide = false
+    r.CanQuery = false
+    r.CanTouch = false
+    r.CastShadow = false
+    r.Transparency = 1
+    r.Material = Enum.Material.Neon
+    m = Instance.new("SpecialMesh", r)
+    m.MeshId = "rbxassetid://3270017"
+end
 
-local circlepart = Instance.new("Part")
-circlepart.Name = "ParryCircle"
-circlepart.Anchored = true
-circlepart.CanCollide = false
-circlepart.CanQuery = false
-circlepart.CanTouch = false
-circlepart.CastShadow = false
-circlepart.Size = Vector3.new(0.1, SETTINGS.CircleSize, SETTINGS.CircleSize)
-circlepart.Shape = Enum.PartType.Cylinder
-circlepart.Material = Enum.Material.Neon
-circlepart.Color = SETTINGS.CircleColor
-circlepart.Transparency = 1
-circlepart.Parent = workspace -- keep in workspace for 3D rendering but hide when off
+if SETTINGS.Visuals then
+    InitVisuals()
+end
 
-local function UpdateCircle(root, state)
-    if not SETTINGS.Visuals or not root then
-        circlepart.Transparency = 1
-        return
-    end
+local function UpdateVisuals(root, distance, state)
+    if not SETTINGS.Visuals or not r then return end
+    
+    -- Small wait so it follows character smoothly
+    task.wait(0.01)
+    
+    r.CFrame = root.CFrame * CFrame.new(0, -2.6, 0) * CFrame.Angles(math.rad(90), 0, 0)
+    local targetSize = math.clamp(distance * 0.8, 5, 65)
+    m.Scale = m.Scale:Lerp(Vector3.new(targetSize, targetSize, 0.5), 0.5)
 
-    circlepart.Size = Vector3.new(0.1, SETTINGS.CircleSize, SETTINGS.CircleSize)
-    circlepart.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, 0, math.rad(90))
-
-    if isSpamming then
-        circlepart.Color = Color3.fromRGB(255, 50, 255)
-        circlepart.Transparency = 0.2
-    elseif state == "clash" then
-        circlepart.Color = Color3.fromRGB(255, 0, 0)
-        circlepart.Transparency = 0.2
+    if state == "clash" then
+        r.Color = Color3.fromRGB(255, 0, 0)
+        r.Transparency = 0.05
     elseif state == "target" then
-        circlepart.Color = Color3.fromRGB(255, 165, 0)
-        circlepart.Transparency = 0.3
+        r.Color = Color3.fromRGB(0, 255, 255)
+        r.Transparency = 0.1
     else
-        circlepart.Color = SETTINGS.CircleColor
-        circlepart.Transparency = SETTINGS.CircleTransparency
+        r.Color = Color3.fromRGB(150, 240, 255)
+        r.Transparency = 0.5
     end
 end
 
@@ -212,10 +211,6 @@ local function RemoveBallTrail()
     if ballTrailObj then
         pcall(function() ballTrailObj:Destroy() end)
         ballTrailObj = nil
-    end
-    if ballRainbowConnection then
-        ballRainbowConnection:Disconnect()
-        ballRainbowConnection = nil
     end
 end
 
@@ -239,30 +234,13 @@ local function AddBallTrail(ball)
     trail.Transparency = NumberSequence.new(0, 1)
     trail.Parent = ball
     ballTrailObj = trail
-
-    if SETTINGS.BallRainbow then
-        ballRainbowConnection = RunService.RenderStepped:Connect(function()
-            rainbowHue = (rainbowHue + 0.01) % 1
-            local c1 = Color3.fromHSV(rainbowHue, 1, 1)
-            local c2 = Color3.fromHSV((rainbowHue + 0.5) % 1, 1, 1)
-            if trail and trail.Parent then
-                trail.Color = ColorSequence.new(c1, c2)
-            end
-            -- safe ball color change
-            pcall(function()
-                if ball and ball.Parent and ball.Parent == BallsFolder then
-                    ball.Color = c1
-                end
-            end)
-        end)
-    end
 end
 
 if BallsFolder then
     BallsFolder.ChildAdded:Connect(function()
         task.wait(0.1)
         local ball = GetBall()
-        if ball and (SETTINGS.BallTrail or SETTINGS.BallRainbow) then
+        if ball and SETTINGS.BallTrail then
             AddBallTrail(ball)
         end
     end)
@@ -353,7 +331,7 @@ RunService.PreSimulation:Connect(function(delta)
     if parryFrameSkip % 3 ~= 0 then return end
 
     if not SETTINGS.AutoParry then
-        circlepart.Transparency = 1
+        if r then r.Transparency = 1 end
         StopSpam()
         return
     end
@@ -361,14 +339,14 @@ RunService.PreSimulation:Connect(function(delta)
     local Char = Player.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
     if not Root then
-        circlepart.Transparency = 1
+        if r then r.Transparency = 1 end
         StopSpam()
         return
     end
 
     local Ball = GetBall()
     if not Ball then
-        circlepart.Transparency = 1
+        if r then r.Transparency = 1 end
         StopSpam()
         return
     end
@@ -424,7 +402,7 @@ RunService.PreSimulation:Connect(function(delta)
             or (IsClashing and "clash")
             or (Targeted and "target")
             or "neutral"
-        UpdateCircle(Root, state)
+        UpdateVisuals(Root, RealDistance, state)
     end
 
     if not Targeted or dot <= 0 then return end
@@ -449,7 +427,7 @@ Player.CharacterAdded:Connect(function()
     adaptivePingOffset = SETTINGS.PingBasedOffset
     pingHistory = {}
     lastBallVel = Vector3.zero
-    circlepart.Transparency = 1
+    if r then r.Transparency = 1 end
     StopSpam()
 end)
 
@@ -473,7 +451,7 @@ local AutoParryToggle = CombatLeft:Toggle({
     Callback = function(v)
         SETTINGS.AutoParry = v
         if not v then
-            circlepart.Transparency = 1
+            if r then r.Transparency = 1 end
             StopSpam()
         end
     end
@@ -487,7 +465,7 @@ AutoParryToggle:Keybind({
     Callback = function(v)
         SETTINGS.AutoParry = v
         if not v then
-            circlepart.Transparency = 1
+            if r then r.Transparency = 1 end
             StopSpam()
         end
     end
@@ -649,7 +627,9 @@ VisualsLeft:Toggle({
     Callback = function(v)
         SETTINGS.Visuals = v
         if not v then
-            circlepart.Transparency = 1
+            if r then r.Transparency = 1 end
+        else
+            if not r then InitVisuals() end
         end
     end
 })
@@ -659,7 +639,7 @@ VisualsLeft:Label({Name = "Circle Color"}):Colorpicker({
     Default = Color3.fromRGB(0, 255, 0),
     Callback = function(color)
         SETTINGS.CircleColor = color
-        circlepart.Color = color
+        if r then r.Color = color end
     end
 })
 
@@ -672,7 +652,6 @@ VisualsLeft:Slider({
     Decimals = 1,
     Callback = function(v)
         SETTINGS.CircleSize = v
-        circlepart.Size = Vector3.new(0.1, v, v)
     end
 })
 
@@ -734,30 +713,7 @@ BallTrailToggle:Colorpicker({
     end
 })
 
-VisualsRight:Toggle({
-    Name = "Ball Rainbow",
-    Flag = "BallRainbow",
-    Default = false,
-    Callback = function(v)
-        SETTINGS.BallRainbow = v
-        if v then
-            local ball = GetBall()
-            if ball then AddBallTrail(ball) end
-        else
-            RemoveBallTrail()
-            pcall(function()
-                local ball = GetBall()
-                if ball and ball.Parent == BallsFolder then
-                    ball.Color = Color3.fromRGB(255, 255, 255)
-                end
-            end)
-            if SETTINGS.BallTrail then
-                local b = GetBall()
-                if b then AddBallTrail(b) end
-            end
-        end
-    end
-})
+
 
 -- SETTINGS TAB
 local SettingsLeft = SettingsTab:Section({Name = "Menu", Side = 1})
