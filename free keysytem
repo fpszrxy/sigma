@@ -6,26 +6,31 @@ local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local TweenService = game:GetService("TweenService")
 local Player = Players.LocalPlayer
 
 -- Settings
 getgenv().Aeloe = {
     AutoParry = false,
     PingBasedOffset = 1.95,
-    DistanceToParry = 0.65,
-    EmergencyRadius = 10,
-    ClashDistance = 22,
-    ClashSpeed = 0.01,
-    NormalSpeed = 0.05,
-    Visuals = true,
-    MultiFireCount = 3,
-    MultiFireDelay = 0.016,
+    DistanceToParry = 2.0,
     PredictPosition = true,
     AdaptivePing = true,
     AutoSpam = false,
+    ManualSpam = false,
     SpamSpeedThreshold = 120,
     SpamDistance = 20,
     SpamInterval = 0.008,
+    Visuals = true,
+    AutoHideIfMiss = false,
+    CurveMode = "Camera",
+    BallTrail = false,
+    BallRainbow = false,
+    TrailColor1 = Color3.fromRGB(255, 0, 0),
+    TrailColor2 = Color3.fromRGB(0, 0, 255),
+    CircleColor = Color3.fromRGB(0, 255, 0),
+    CircleTransparency = 0.5,
+    CircleSize = 20,
 }
 
 local SETTINGS = getgenv().Aeloe
@@ -38,9 +43,13 @@ local pingHistoryMax = 10
 local adaptivePingOffset = SETTINGS.PingBasedOffset
 local lastBallVel = Vector3.zero
 local isSpamming = false
+local rainbowHue = 0
+local ballTrailObj = nil
+local ballRainbowConnection = nil
 
 local BallsFolder = workspace:FindFirstChild("Balls") or workspace:WaitForChild("Balls", 5)
 
+-- Network stats
 local NetworkStats = nil
 pcall(function()
     NetworkStats = Stats:FindFirstChild("Network")
@@ -102,43 +111,153 @@ local function FireClick()
     end)
 end
 
-local function SendClick(isClashing, ball)
+-- Curve mode prediction
+local function GetPredictedPosition(ball, velocity, ping)
+    if not SETTINGS.PredictPosition then return ball.Position end
+    local char = Player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local mode = SETTINGS.CurveMode
+
+    local gravity = workspace.Gravity
+    local basePos = ball.Position
+        + (velocity * ping)
+        + Vector3.new(0, -0.5 * gravity * ping * ping, 0)
+
+    if mode == "Camera" then
+        local camera = workspace.CurrentCamera
+        local camDir = camera.CFrame.LookVector
+        return basePos + camDir * 0.5
+    elseif mode == "Random" then
+        return basePos + Vector3.new(
+            math.random(-2, 2) * 0.1,
+            math.random(-2, 2) * 0.1,
+            math.random(-2, 2) * 0.1
+        )
+    elseif mode == "Accelerated" then
+        local BallAcceleration = (velocity - lastBallVel) / math.max(ping, 0.001)
+        return basePos + (BallAcceleration * 0.5 * ping * ping)
+    elseif mode == "Backwards" then
+        return basePos - velocity * ping * 0.3
+    elseif mode == "Slow" then
+        return ball.Position + velocity * (ping * 0.5)
+    elseif mode == "High" then
+        return basePos + Vector3.new(0, 5, 0)
+    end
+    return basePos
+end
+
+local function SendClick(ball)
     if not SETTINGS.AutoParry or IsParrying then return end
     local now = tick()
-    local cd = isClashing and SETTINGS.ClashSpeed or SETTINGS.NormalSpeed
-    if not isClashing and LastBallHit == ball and (now - LastClick) < 0.5 then return end
-    if (now - LastClick) < cd then return end
+    if LastBallHit == ball and (now - LastClick) < 0.5 then return end
+    if (now - LastClick) < 0.05 then return end
     IsParrying = true
     LastClick = now
     LastBallHit = ball
     FireClick()
-    if SETTINGS.MultiFireCount > 1 then
-        for i = 1, SETTINGS.MultiFireCount - 1 do
-            task.delay(SETTINGS.MultiFireDelay * i, function()
-                if IsParrying then FireClick() end
-            end)
-        end
-    end
-    task.delay(cd, function() IsParrying = false end)
+    task.delay(0.05, function() IsParrying = false end)
 end
 
--- Drawing circles (old style)
-local circle = Drawing.new("Circle")
-circle.Visible = false
-circle.Radius = 80
-circle.Color = Color3.fromRGB(0, 200, 255)
-circle.Thickness = 2
-circle.Filled = false
-circle.Transparency = 1
+-- 3D World Circle
+local circlepart = Instance.new("Part")
+circlepart.Name = "ParryCircle"
+circlepart.Anchored = true
+circlepart.CanCollide = false
+circlepart.CanQuery = false
+circlepart.CanTouch = false
+circlepart.CastShadow = false
+circlepart.Size = Vector3.new(0.1, SETTINGS.CircleSize, SETTINGS.CircleSize)
+circlepart.Shape = Enum.PartType.Cylinder
+circlepart.Material = Enum.Material.Neon
+circlepart.Color = SETTINGS.CircleColor
+circlepart.Transparency = 1
+circlepart.Parent = workspace
 
-local circle2 = Drawing.new("Circle")
-circle2.Visible = false
-circle2.Radius = 40
-circle2.Color = Color3.fromRGB(255, 0, 0)
-circle2.Thickness = 1
-circle2.Filled = false
-circle2.Transparency = 1
+local function UpdateCircle(root, state)
+    if not SETTINGS.Visuals or not root then
+        circlepart.Transparency = 1
+        return
+    end
 
+    circlepart.Size = Vector3.new(0.1, SETTINGS.CircleSize, SETTINGS.CircleSize)
+    circlepart.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, 0, math.rad(90))
+
+    if isSpamming then
+        circlepart.Color = Color3.fromRGB(255, 50, 255)
+        circlepart.Transparency = 0.2
+    elseif state == "clash" then
+        circlepart.Color = Color3.fromRGB(255, 0, 0)
+        circlepart.Transparency = 0.2
+    elseif state == "target" then
+        circlepart.Color = Color3.fromRGB(255, 165, 0)
+        circlepart.Transparency = 0.3
+    else
+        circlepart.Color = SETTINGS.CircleColor
+        circlepart.Transparency = SETTINGS.CircleTransparency
+    end
+end
+
+-- Ball Trail
+local function RemoveBallTrail()
+    if ballTrailObj then
+        pcall(function() ballTrailObj:Destroy() end)
+        ballTrailObj = nil
+    end
+    if ballRainbowConnection then
+        ballRainbowConnection:Disconnect()
+        ballRainbowConnection = nil
+    end
+end
+
+local function AddBallTrail(ball)
+    RemoveBallTrail()
+    if not ball then return end
+
+    local attachment0 = Instance.new("Attachment")
+    attachment0.Parent = ball
+    local attachment1 = Instance.new("Attachment")
+    attachment1.Position = Vector3.new(0, 0, -ball.Size.Z / 2)
+    attachment1.Parent = ball
+
+    local trail = Instance.new("Trail")
+    trail.Attachment0 = attachment0
+    trail.Attachment1 = attachment1
+    trail.Lifetime = 0.5
+    trail.MinLength = 0
+    trail.FaceCamera = true
+    trail.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
+    trail.Transparency = NumberSequence.new(0, 1)
+    trail.Parent = ball
+    ballTrailObj = trail
+
+    if SETTINGS.BallRainbow then
+        ballRainbowConnection = RunService.RenderStepped:Connect(function()
+            rainbowHue = (rainbowHue + 0.01) % 1
+            local c1 = Color3.fromHSV(rainbowHue, 1, 1)
+            local c2 = Color3.fromHSV((rainbowHue + 0.5) % 1, 1, 1)
+            trail.Color = ColorSequence.new(c1, c2)
+            if ball and ball.Parent then
+                ball.Color = c1
+            end
+        end)
+    end
+end
+
+-- Watch for ball changes
+if BallsFolder then
+    BallsFolder.ChildAdded:Connect(function(child)
+        task.wait(0.1)
+        local ball = GetBall()
+        if ball and (SETTINGS.BallTrail or SETTINGS.BallRainbow) then
+            AddBallTrail(ball)
+        end
+    end)
+    BallsFolder.ChildRemoved:Connect(function()
+        RemoveBallTrail()
+    end)
+end
+
+-- Spam indicator
 local spamIndicator = Drawing.new("Text")
 spamIndicator.Visible = false
 spamIndicator.Size = 20
@@ -148,58 +267,6 @@ spamIndicator.Outline = true
 spamIndicator.OutlineColor = Color3.fromRGB(0, 0, 0)
 spamIndicator.Color = Color3.fromRGB(255, 50, 255)
 spamIndicator.Text = "[ SPAM ACTIVE ]"
-
-local function UpdateCircle(root, distance, state)
-    if not SETTINGS.Visuals then
-        circle.Visible = false
-        circle2.Visible = false
-        return
-    end
-    local camera = workspace.CurrentCamera
-    local screenPos, onScreen = camera:WorldToViewportPoint(root.Position)
-    if not onScreen then
-        circle.Visible = false
-        circle2.Visible = false
-        return
-    end
-    local pos2D = Vector2.new(screenPos.X, screenPos.Y)
-    local scaledRadius = math.clamp(1000 / math.max(distance, 1), 20, 120)
-    circle.Position = pos2D
-    circle.Radius = scaledRadius
-    circle.Visible = true
-    circle2.Position = pos2D
-    circle2.Radius = scaledRadius * 0.5
-    circle2.Visible = true
-    if state == "spam" then
-        circle.Color = Color3.fromRGB(255, 50, 255)
-        circle2.Color = Color3.fromRGB(200, 0, 255)
-    elseif state == "clash" then
-        circle.Color = Color3.fromRGB(255, 0, 0)
-        circle2.Color = Color3.fromRGB(255, 100, 0)
-    elseif state == "target" then
-        circle.Color = Color3.fromRGB(0, 255, 255)
-        circle2.Color = Color3.fromRGB(0, 150, 255)
-    else
-        circle.Color = Color3.fromRGB(150, 240, 255)
-        circle2.Color = Color3.fromRGB(100, 180, 255)
-    end
-end
-
-local function StartSpam()
-    if isSpamming then return end
-    isSpamming = true
-    task.spawn(function()
-        while isSpamming and SETTINGS.AutoSpam do
-            FireClick()
-            task.wait(SETTINGS.SpamInterval)
-        end
-        isSpamming = false
-    end)
-end
-
-local function StopSpam()
-    isSpamming = false
-end
 
 -- Ball Speed HUD
 local velocityGui = Instance.new("ScreenGui")
@@ -235,6 +302,24 @@ velocityLabel.TextSize = 18
 velocityLabel.Text = "0 studs/s"
 velocityLabel.Parent = velocityFrame
 
+-- Auto spam
+local function StartSpam()
+    if isSpamming then return end
+    isSpamming = true
+    task.spawn(function()
+        while isSpamming and SETTINGS.AutoSpam do
+            FireClick()
+            task.wait(SETTINGS.SpamInterval)
+        end
+        isSpamming = false
+    end)
+end
+
+local function StopSpam()
+    isSpamming = false
+end
+
+-- Ball speed HUD update
 RunService.RenderStepped:Connect(function()
     local ball = GetBall()
     if ball then
@@ -260,8 +345,7 @@ end)
 -- Main parry loop
 RunService.PreSimulation:Connect(function(delta)
     if not SETTINGS.AutoParry then
-        circle.Visible = false
-        circle2.Visible = false
+        circlepart.Transparency = 1
         spamIndicator.Visible = false
         StopSpam()
         return
@@ -270,16 +354,14 @@ RunService.PreSimulation:Connect(function(delta)
     local Char = Player.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
     if not Root then
-        circle.Visible = false
-        circle2.Visible = false
+        circlepart.Transparency = 1
         StopSpam()
         return
     end
 
     local Ball = GetBall()
     if not Ball then
-        circle.Visible = false
-        circle2.Visible = false
+        circlepart.Transparency = 1
         StopSpam()
         return
     end
@@ -298,16 +380,8 @@ RunService.PreSimulation:Connect(function(delta)
     local PlayerPos = Root.Position
     local BallPos = Ball.Position
 
-    -- Acceleration tracking for better prediction
-    local BallAcceleration = (Velocity - lastBallVel) / math.max(delta, 0.001)
+    local PredictedPos = GetPredictedPosition(Ball, Velocity, Ping)
     lastBallVel = Velocity
-
-    local PredictedPos = SETTINGS.PredictPosition and (
-        BallPos
-        + (Velocity * Ping)
-        + (BallAcceleration * 0.5 * Ping * Ping)
-        + Vector3.new(0, -0.5 * workspace.Gravity * Ping * Ping, 0)
-    ) or BallPos
 
     local Distance = (PlayerPos - PredictedPos).Magnitude
     local RealDistance = (PlayerPos - BallPos).Magnitude
@@ -322,7 +396,7 @@ RunService.PreSimulation:Connect(function(delta)
     end
 
     local Targeted = IsTargeted()
-    local IsClashing = Targeted and RealDistance <= SETTINGS.ClashDistance
+    local IsClashing = Targeted and RealDistance <= 22
 
     -- Auto spam
     local shouldSpam = SETTINGS.AutoSpam
@@ -337,45 +411,34 @@ RunService.PreSimulation:Connect(function(delta)
         StopSpam()
     end
 
-    -- Update spam indicator
+    -- Spam indicator
     local camera = workspace.CurrentCamera
     spamIndicator.Position = Vector2.new(camera.ViewportSize.X / 2, 50)
     spamIndicator.Visible = shouldSpam and SETTINGS.Visuals
 
-    -- Circles
+    -- Circle
     frameCounter = frameCounter + 1
     if frameCounter % 2 == 0 then
-        local state = shouldSpam and "spam"
+        local state = isSpamming and "spam"
             or (IsClashing and "clash")
             or (Targeted and "target")
             or "neutral"
-        UpdateCircle(Root, RealDistance, state)
+        UpdateCircle(Root, state)
     end
 
-    if IsClashing then
-        SendClick(true, Ball)
-        return
+    if not Targeted or dot <= 0 then return end
+
+    local TimeToHit = RealDistance / math.max(approachSpeed, 1)
+    local PredictionThreshold = SETTINGS.DistanceToParry / 10 + (Ping * adaptivePingOffset)
+
+    if Speed > 150 then
+        PredictionThreshold = PredictionThreshold * 1.2
+    elseif Speed > 100 then
+        PredictionThreshold = PredictionThreshold * 1.1
     end
 
-    if Targeted and dot > 0 then
-        local TimeToHit = RealDistance / math.max(approachSpeed, 1)
-        local PredictionThreshold = SETTINGS.DistanceToParry + (Ping * adaptivePingOffset)
-
-        if Speed > 150 then
-            PredictionThreshold = PredictionThreshold * 1.2
-        elseif Speed > 100 then
-            PredictionThreshold = PredictionThreshold * 1.1
-        end
-
-        if RealDistance <= SETTINGS.EmergencyRadius then
-            IsParrying = false
-            SendClick(false, Ball)
-            return
-        end
-
-        if TimeToHit <= PredictionThreshold then
-            SendClick(false, Ball)
-        end
+    if TimeToHit <= PredictionThreshold then
+        SendClick(Ball)
     end
 end)
 
@@ -385,33 +448,32 @@ Player.CharacterAdded:Connect(function()
     adaptivePingOffset = SETTINGS.PingBasedOffset
     pingHistory = {}
     lastBallVel = Vector3.zero
-    circle.Visible = false
-    circle2.Visible = false
+    circlepart.Transparency = 1
     spamIndicator.Visible = false
     StopSpam()
 end)
 
--- GUI (Nexonix)
+-- GUI
 local KeybindList = Library:KeybindList({Name = "dih hub"})
 local Window = Library:Window({Logo = "rbxassetid://77749228793011"})
 
 local CombatTab = Window:Page({Icon = "rbxassetid://108020878442937"})
 local SpamTab = Window:Page({Icon = "rbxassetid://10709781460"})
 local VisualsTab = Window:Page({Icon = "rbxassetid://10723346959"})
+local SettingsTab = Window:Page({Icon = "rbxassetid://10734951847"})
 
--- Combat Tab
-local ParryLeft = CombatTab:Section({Name = "Auto Parry", Side = 1})
-local ParryRight = CombatTab:Section({Name = "Parry Settings", Side = 2})
+-- ============ COMBAT TAB ============
+local CombatLeft = CombatTab:Section({Name = "Combat", Side = 1})
+local CombatRight = CombatTab:Section({Name = "Settings", Side = 2})
 
-local AutoParryToggle = ParryLeft:Toggle({
+local AutoParryToggle = CombatLeft:Toggle({
     Name = "Auto Parry",
     Flag = "AutoParry",
     Default = false,
     Callback = function(v)
         SETTINGS.AutoParry = v
         if not v then
-            circle.Visible = false
-            circle2.Visible = false
+            circlepart.Transparency = 1
             spamIndicator.Visible = false
             StopSpam()
         end
@@ -425,89 +487,14 @@ AutoParryToggle:Keybind({
     Mode = "Toggle",
     Callback = function(v)
         SETTINGS.AutoParry = v
+        if not v then
+            circlepart.Transparency = 1
+            StopSpam()
+        end
     end
 })
 
-ParryLeft:Toggle({
-    Name = "Predict Position",
-    Flag = "PredictPosition",
-    Default = true,
-    Callback = function(v) SETTINGS.PredictPosition = v end
-})
-
-ParryLeft:Toggle({
-    Name = "Adaptive Ping",
-    Flag = "AdaptivePing",
-    Default = true,
-    Callback = function(v) SETTINGS.AdaptivePing = v end
-})
-
-ParryLeft:Slider({
-    Name = "Parry Distance",
-    Flag = "DistanceToParry",
-    Min = 0.1,
-    Max = 2,
-    Default = 0.65,
-    Decimals = 0.01,
-    Suffix = "s",
-    Callback = function(v) SETTINGS.DistanceToParry = v end
-})
-
-ParryLeft:Slider({
-    Name = "Ping Offset",
-    Flag = "PingOffset",
-    Min = 0.5,
-    Max = 5,
-    Default = 1.95,
-    Decimals = 0.01,
-    Callback = function(v) SETTINGS.PingBasedOffset = v end
-})
-
-ParryRight:Slider({
-    Name = "Emergency Radius",
-    Flag = "EmergencyRadius",
-    Min = 1,
-    Max = 30,
-    Default = 10,
-    Suffix = " studs",
-    Callback = function(v) SETTINGS.EmergencyRadius = v end
-})
-
-ParryRight:Slider({
-    Name = "Multi Fire Count",
-    Flag = "MultiFireCount",
-    Min = 1,
-    Max = 5,
-    Default = 3,
-    Decimals = 1,
-    Callback = function(v) SETTINGS.MultiFireCount = v end
-})
-
-ParryRight:Slider({
-    Name = "Clash Distance",
-    Flag = "ClashDistance",
-    Min = 5,
-    Max = 50,
-    Default = 22,
-    Suffix = " studs",
-    Callback = function(v) SETTINGS.ClashDistance = v end
-})
-
-ParryRight:Slider({
-    Name = "Normal Speed",
-    Flag = "NormalSpeed",
-    Min = 0.01,
-    Max = 0.2,
-    Default = 0.05,
-    Decimals = 0.01,
-    Callback = function(v) SETTINGS.NormalSpeed = v end
-})
-
--- Spam Tab
-local SpamLeft = SpamTab:Section({Name = "Auto Spam", Side = 1})
-local SpamRight = SpamTab:Section({Name = "Spam Settings", Side = 2})
-
-SpamLeft:Toggle({
+local AutoSpamToggle = CombatLeft:Toggle({
     Name = "Auto Spam",
     Flag = "AutoSpam",
     Default = false,
@@ -517,10 +504,10 @@ SpamLeft:Toggle({
     end
 })
 
-SpamLeft:Label({Name = "Spams clicks when ball is fast and close"}):Keybind({
-    Name = "Spam Toggle",
-    Flag = "SpamBind",
-    Default = Enum.KeyCode.P,
+AutoSpamToggle:Keybind({
+    Name = "Auto Spam",
+    Flag = "AutoSpamBind",
+    Default = Enum.KeyCode.H,
     Mode = "Toggle",
     Callback = function(v)
         SETTINGS.AutoSpam = v
@@ -528,77 +515,254 @@ SpamLeft:Label({Name = "Spams clicks when ball is fast and close"}):Keybind({
     end
 })
 
-SpamRight:Slider({
-    Name = "Speed Threshold",
-    Flag = "SpamSpeed",
-    Min = 50,
-    Max = 300,
-    Default = 120,
-    Suffix = " studs/s",
-    Callback = function(v) SETTINGS.SpamSpeedThreshold = v end
+CombatLeft:Label({Name = "Manual Spam"}):Keybind({
+    Name = "Manual Spam",
+    Flag = "ManualSpamBind",
+    Default = Enum.KeyCode.G,
+    Mode = "Hold",
+    Callback = function(v)
+        SETTINGS.ManualSpam = v
+        if v then
+            task.spawn(function()
+                while SETTINGS.ManualSpam do
+                    FireClick()
+                    task.wait(SETTINGS.SpamInterval)
+                end
+            end)
+        end
+    end
 })
 
-SpamRight:Slider({
-    Name = "Spam Distance",
-    Flag = "SpamDistance",
-    Min = 5,
+CombatLeft:Toggle({
+    Name = "Auto Hide if Miss",
+    Flag = "AutoHideMiss",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.AutoHideIfMiss = v
+    end
+})
+
+-- Settings right
+CombatRight:Toggle({
+    Name = "Auto Predict Range",
+    Flag = "PredictPosition",
+    Default = true,
+    Callback = function(v)
+        SETTINGS.PredictPosition = v
+    end
+})
+
+CombatRight:Slider({
+    Name = "Base Range",
+    Flag = "DistanceToParry",
+    Min = 1,
     Max = 50,
     Default = 20,
-    Suffix = " studs",
-    Callback = function(v) SETTINGS.SpamDistance = v end
+    Decimals = 1,
+    Callback = function(v)
+        SETTINGS.DistanceToParry = v
+    end
 })
 
-SpamRight:Slider({
+CombatRight:Toggle({
+    Name = "Adaptive Ping",
+    Flag = "AdaptivePing",
+    Default = true,
+    Callback = function(v)
+        SETTINGS.AdaptivePing = v
+    end
+})
+
+CombatRight:Dropdown({
+    Name = "Curve Type",
+    Flag = "CurveMode",
+    Default = "Camera",
+    Items = {"Camera", "Random", "Accelerated", "Backwards", "Slow", "High"},
+    Callback = function(v)
+        SETTINGS.CurveMode = v
+    end
+})
+
+-- ============ SPAM TAB ============
+local SpamLeft = SpamTab:Section({Name = "Auto Spam", Side = 1})
+local SpamRight = SpamTab:Section({Name = "Manual Spam", Side = 2})
+
+SpamLeft:Slider({
     Name = "Spam Interval",
     Flag = "SpamInterval",
     Min = 0.001,
-    Max = 0.05,
+    Max = 0.1,
     Default = 0.008,
     Decimals = 0.001,
     Suffix = "s",
     Callback = function(v) SETTINGS.SpamInterval = v end
 })
 
--- Visuals Tab
-local VisualsLeft = VisualsTab:Section({Name = "Visuals", Side = 1})
-local VisualsRight = VisualsTab:Section({Name = "HUD", Side = 2})
+SpamLeft:Slider({
+    Name = "Speed Threshold",
+    Flag = "SpamSpeed",
+    Min = 50,
+    Max = 300,
+    Default = 120,
+    Suffix = " s/s",
+    Callback = function(v) SETTINGS.SpamSpeedThreshold = v end
+})
+
+SpamLeft:Slider({
+    Name = "Spam Distance",
+    Flag = "SpamDistance",
+    Min = 5,
+    Max = 100,
+    Default = 20,
+    Suffix = " studs",
+    Callback = function(v) SETTINGS.SpamDistance = v end
+})
+
+SpamRight:Label({Name = "Manual Spam Key: G (Hold)"})
+
+SpamRight:Slider({
+    Name = "Manual Spam Interval",
+    Flag = "ManualSpamInterval",
+    Min = 0.001,
+    Max = 0.1,
+    Default = 0.008,
+    Decimals = 0.001,
+    Suffix = "s",
+    Callback = function(v) SETTINGS.SpamInterval = v end
+})
+
+-- ============ VISUALS TAB ============
+local VisualsLeft = VisualsTab:Section({Name = "Visualizer", Side = 1})
+local VisualsRight = VisualsTab:Section({Name = "Ball Effects", Side = 2})
 
 VisualsLeft:Toggle({
-    Name = "Circle Visuals",
+    Name = "Circle Visualizer",
     Flag = "CircleVisuals",
     Default = true,
     Callback = function(v)
         SETTINGS.Visuals = v
         if not v then
-            circle.Visible = false
-            circle2.Visible = false
+            circlepart.Transparency = 1
             spamIndicator.Visible = false
         end
     end
 })
 
-VisualsLeft:Label({Name = "Outer Circle Color"}):Colorpicker({
-    Flag = "OuterCircleColor",
-    Default = Color3.fromRGB(0, 200, 255),
+VisualsLeft:Label({Name = "Circle Color"}):Colorpicker({
+    Flag = "CircleColor",
+    Default = Color3.fromRGB(0, 255, 0),
     Callback = function(color)
-        circle.Color = color
+        SETTINGS.CircleColor = color
+        circlepart.Color = color
     end
 })
 
-VisualsLeft:Label({Name = "Inner Circle Color"}):Colorpicker({
-    Flag = "InnerCircleColor",
-    Default = Color3.fromRGB(255, 0, 0),
-    Callback = function(color)
-        circle2.Color = color
+VisualsLeft:Slider({
+    Name = "Circle Size",
+    Flag = "CircleSize",
+    Min = 5,
+    Max = 50,
+    Default = 20,
+    Decimals = 1,
+    Callback = function(v)
+        SETTINGS.CircleSize = v
+        circlepart.Size = Vector3.new(0.1, v, v)
     end
 })
 
-VisualsRight:Toggle({
+VisualsLeft:Slider({
+    Name = "Circle Transparency",
+    Flag = "CircleTransparency",
+    Min = 0,
+    Max = 0.9,
+    Default = 0.5,
+    Decimals = 0.1,
+    Callback = function(v)
+        SETTINGS.CircleTransparency = v
+    end
+})
+
+VisualsLeft:Toggle({
     Name = "Ball Speed HUD",
     Flag = "BallSpeedHUD",
     Default = true,
     Callback = function(v)
         velocityFrame.Visible = v
+    end
+})
+
+-- Ball effects
+local BallTrailToggle = VisualsRight:Toggle({
+    Name = "Ball Trail",
+    Flag = "BallTrail",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.BallTrail = v
+        if v then
+            local ball = GetBall()
+            if ball then AddBallTrail(ball) end
+        else
+            RemoveBallTrail()
+        end
+    end
+})
+
+BallTrailToggle:Colorpicker({
+    Flag = "TrailColor1",
+    Default = Color3.fromRGB(255, 0, 0),
+    Callback = function(color)
+        SETTINGS.TrailColor1 = color
+        if ballTrailObj then
+            ballTrailObj.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
+        end
+    end
+})
+
+BallTrailToggle:Colorpicker({
+    Flag = "TrailColor2",
+    Default = Color3.fromRGB(0, 0, 255),
+    Callback = function(color)
+        SETTINGS.TrailColor2 = color
+        if ballTrailObj then
+            ballTrailObj.Color = ColorSequence.new(SETTINGS.TrailColor1, SETTINGS.TrailColor2)
+        end
+    end
+})
+
+VisualsRight:Toggle({
+    Name = "Ball Rainbow",
+    Flag = "BallRainbow",
+    Default = false,
+    Callback = function(v)
+        SETTINGS.BallRainbow = v
+        if v then
+            local ball = GetBall()
+            if ball then AddBallTrail(ball) end
+        else
+            RemoveBallTrail()
+            -- Reset ball color
+            local ball = GetBall()
+            if ball then
+                pcall(function() ball.Color = Color3.fromRGB(255, 255, 255) end)
+            end
+            if SETTINGS.BallTrail then
+                local b = GetBall()
+                if b then AddBallTrail(b) end
+            end
+        end
+    end
+})
+
+-- ============ SETTINGS TAB ============
+local SettingsLeft = SettingsTab:Section({Name = "Menu", Side = 1})
+
+SettingsLeft:Label({Name = "Toggle UI"}):Keybind({
+    Name = "Toggle UI",
+    Flag = "UIKeybind",
+    Default = Enum.KeyCode.RightControl,
+    Mode = "Toggle",
+    Callback = function(v)
+        Library.MenuKeybind = tostring(Library.Flags["UIKeybind"] and Library.Flags["UIKeybind"].Key or Enum.KeyCode.RightControl)
     end
 })
 
