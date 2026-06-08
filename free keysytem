@@ -231,22 +231,29 @@ RunService.RenderStepped:Connect(function()
 end)
 
 -- Main parry loop
-RunService.PostSimulation:Connect(function()
+local lastBallPos = Vector3.zero
+local lastBallVel = Vector3.zero
+local frameTime = 0
+
+RunService.PreSimulation:Connect(function(delta)
     if not SETTINGS.AutoParry then
         if r then r.Transparency = 1 end
         return
     end
+
     local Char = Player.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
     if not Root then
         if r then r.Transparency = 1 end
         return
     end
+
     local Ball = GetBall()
     if not Ball then
         if r then r.Transparency = 1 end
         return
     end
+
     local Velocity, Speed
     local ok = pcall(function()
         Velocity = Ball.AssemblyLinearVelocity
@@ -254,39 +261,81 @@ RunService.PostSimulation:Connect(function()
     end)
     if not ok or not Velocity or not Speed then return end
     if Speed < 1 then return end
+
     local Ping = GetPing()
     UpdateAdaptivePing(Ping)
+
     local PlayerPos = Root.Position
-    local PredictedPos = PredictBallPosition(Ball, Ping)
+    local BallPos = Ball.Position
+
+    -- Acceleration detection
+    local BallAcceleration = (Velocity - lastBallVel) / math.max(delta, 0.001)
+    lastBallVel = Velocity
+    lastBallPos = BallPos
+
+    -- Advanced prediction using acceleration
+    local function PredictWithAcceleration(timeAhead)
+        local gravity = workspace.Gravity
+        return BallPos
+            + (Velocity * timeAhead)
+            + (BallAcceleration * 0.5 * timeAhead * timeAhead)
+            + Vector3.new(0, -0.5 * gravity * timeAhead * timeAhead, 0)
+    end
+
+    local PredictedPos = SETTINGS.PredictPosition 
+        and PredictWithAcceleration(Ping) 
+        or BallPos
+
     local Distance = (PlayerPos - PredictedPos).Magnitude
-    local RealDistance = (PlayerPos - Ball.Position).Magnitude
-    local directionToPlayer = (PlayerPos - Ball.Position).Unit
+    local RealDistance = (PlayerPos - BallPos).Magnitude
+
+    local directionToPlayer = (PlayerPos - BallPos).Unit
     local velocityDirection = Velocity.Unit
     local dot = directionToPlayer:Dot(velocityDirection)
-    if dot < 0 then LastBallHit = nil end
+
+    -- Extra check: is ball actually moving toward player
+    local approachSpeed = dot * Speed
+    if approachSpeed <= 0 then
+        LastBallHit = nil
+        return
+    end
+
+    if dot < 0 then
+        LastBallHit = nil
+        return
+    end
+
     local Targeted = IsTargeted()
     local IsClashing = Targeted and RealDistance <= SETTINGS.ClashDistance
+
     frameCounter = frameCounter + 1
     if frameCounter % 2 == 0 then
         UpdateVisuals(Root, RealDistance, IsClashing and "clash" or (Targeted and "target" or "neutral"))
     end
+
     if IsClashing then
         SendClick(true, Ball)
         return
     end
+
     if Targeted and dot > 0 then
-        local TimeToHit = Distance / math.max(Speed, 1)
+        -- More accurate time to hit using approach speed
+        local TimeToHit = RealDistance / math.max(approachSpeed, 1)
         local PredictionThreshold = SETTINGS.DistanceToParry + (Ping * adaptivePingOffset)
+
         if Speed > 150 then
             PredictionThreshold = PredictionThreshold * 1.2
         elseif Speed > 100 then
             PredictionThreshold = PredictionThreshold * 1.1
         end
+
+        -- Emergency
         if RealDistance <= SETTINGS.EmergencyRadius then
             IsParrying = false
             SendClick(false, Ball)
             return
         end
+
         if TimeToHit <= PredictionThreshold then
             SendClick(false, Ball)
         end
